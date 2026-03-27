@@ -1,28 +1,28 @@
 # Tasks
 
-_Last updated: YYYY-MM-DD_
+_Last updated: 2026-03-27_
 
 ## Active
 
 _Current work items for this iteration._
 
-- [ ] Task 1
-- [ ] Task 2
+- [ ] Start Phase 3: Core TUI Loop in v0.1.0 plan.
 
 ## Tech Debt
 
 _Known issues, refactoring needs, cleanup items._
 
-- [ ] Item 1
+- [ ] None at this time
 
 ## Backlog
 
 _Future work, ideas, nice-to-haves._
 
-- [ ] Item 1
+- [ ] None at this time
 
 ## Completed
 
 _Recently completed items (clear periodically)._
 
-- [x] Example completed task
+- [x] `v0.1.0-implementation.md - Phase 1 Project Scaffold`
+- [x] `v0.1.0-implementation.md - Phase 2 Data Layer`
