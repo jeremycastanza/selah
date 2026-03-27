@@ -13,7 +13,18 @@ pub fn open_db() -> Connection {
     let conn = Connection::open(&tmp_path).expect("Failed to open KJV database");
     conn.execute_batch("PRAGMA journal_mode=OFF; PRAGMA synchronous=OFF;")
         .expect("Failed to set pragmas");
+    build_fts(&conn, "kjv");
     conn
+}
+
+fn build_fts(conn: &Connection, translation: &str) {
+    let table = verse_table(translation);
+    let fts = format!("{}_fts", table);
+    conn.execute_batch(&format!(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS {fts} USING fts5(t, content='{table}', content_rowid='rowid');\
+         INSERT INTO {fts}({fts}) VALUES('rebuild');",
+    ))
+    .expect("Failed to build FTS index");
 }
 
 fn verse_table(translation: &str) -> String {

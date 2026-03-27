@@ -61,7 +61,7 @@ Two SQLite databases, embedded at compile time:
 ```rust
 // bible/db.rs
 
-// Always bundled — KJV only (~1.2 MB)
+// Always bundled — KJV only (~4.5 MB, FTS5 index built at runtime)
 const KJV_DB: &[u8] = include_bytes!("../../data/kjv.sqlite");
 
 // Optional — extra translations, gated behind a feature flag
@@ -69,7 +69,7 @@ const KJV_DB: &[u8] = include_bytes!("../../data/kjv.sqlite");
 const EXTRA_DB: &[u8] = include_bytes!("../../data/extra.sqlite");
 ```
 
-- `data/kjv.sqlite` — committed to git (~1.2 MB). Sourced from `scrollmapper/bible_databases`.
+- `data/kjv.sqlite` — committed to git (~4.5 MB). Sourced from `scrollmapper/bible_databases`. FTS5 index excluded from on-disk DB and built at runtime.
 - `data/extra.sqlite` — **not committed to git** (`.gitignore`'d). Either LFS'd or generated via build.rs. Only included when building with `--features extra-translations`.
 
 ## Binary Size Estimates
@@ -78,8 +78,8 @@ const EXTRA_DB: &[u8] = include_bytes!("../../data/extra.sqlite");
 |---|---|
 | Rust binary (stripped, release, LTO) | ~2–3 MB |
 | rusqlite bundled SQLite | ~1.5 MB |
-| KJV database (embedded) | ~1.2 MB |
-| **Total (v1, KJV only)** | **~5–6 MB** |
+| KJV database (embedded) | ~4.5 MB |
+| **Total (v1, KJV only)** | **~8–9 MB** |
 
 With extra translations enabled, binary grows by ~1–3 MB per additional translation in `extra.sqlite`.
 

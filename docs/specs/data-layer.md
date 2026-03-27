@@ -13,7 +13,7 @@ All Bible text is bundled inside the binary. There are no runtime network reques
 
 Bible data is split across two SQLite databases:
 
-1. **`data/kjv.sqlite`** (~1.2 MB) — KJV only. Always bundled. Committed directly to git (small enough that LFS is unnecessary). This is the base database and guarantees the app always works offline out of the box.
+1. **`data/kjv.sqlite`** (~4.5 MB) — KJV only. Always bundled. Committed directly to git. This is the base database and guarantees the app always works offline out of the box.
 
 2. **`data/extra.sqlite`** (variable, potentially 30+ MB) — All other translations. **Not committed to git.** Either:
    - Tracked via Git LFS, or
@@ -53,19 +53,9 @@ CREATE TABLE t_kjv (
     t   TEXT    NOT NULL   -- verse text
 );
 
--- Full-text search virtual table (FTS5) per translation
-CREATE VIRTUAL TABLE t_kjv_fts USING fts5(
-    t,
-    content='t_kjv',
-    content_rowid='rowid'
-);
-
--- Book abbreviations (used for CLI reference parsing)
-CREATE TABLE key_abbreviations_english (
-    id  INTEGER PRIMARY KEY,
-    a   TEXT NOT NULL,  -- abbreviation string
-    b   INTEGER NOT NULL  -- book number
-);
+-- FTS5 index is NOT stored on disk — it is built at runtime in open_db()
+-- to keep the embedded database small (~4.5 MB vs ~7.3 MB with FTS).
+-- CREATE VIRTUAL TABLE t_kjv_fts USING fts5(t, content='t_kjv', content_rowid='rowid');
 ```
 
 ### Translation Table Naming
@@ -212,9 +202,11 @@ The full bookmark list is loaded into `App.bookmarks: Vec<BookmarkEntry>` at sta
 
 ## Resolved Decisions
 
-1. **Two-database strategy** — KJV base database committed directly to git (~1.2 MB). Extra translations in a separate database, excluded from git and either LFS'd or generated via build.rs. This keeps `cargo build` fast and the repo small while allowing opt-in multi-translation builds.
+1. **Two-database strategy** — KJV base database committed directly to git (~4.5 MB). Extra translations in a separate database, excluded from git and either LFS'd or generated via build.rs. This keeps `cargo build` fast and the repo small while allowing opt-in multi-translation builds.
 
-2. **Database file in git** — `data/kjv.sqlite` committed directly (small enough). `data/extra.sqlite` excluded via `.gitignore`.
+2. **Database file in git** — `data/kjv.sqlite` committed directly. `data/extra.sqlite` excluded via `.gitignore`.
+
+3. **FTS5 built at runtime** — The FTS5 full-text search index is not stored in the on-disk database. It is built in-memory at startup via `open_db()`. This saves ~2.8 MB in the embedded database (4.5 MB vs 7.3 MB). Rebuilding the index for 31k verses takes <1 second.
 
 ## Open Questions
 
