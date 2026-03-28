@@ -7,6 +7,37 @@ mod bible;
 mod config;
 mod ui;
 
+use clap::Parser;
+
+use bible::db;
+use cli::{Cli, Commands};
+
 fn main() {
-    // TODO: CLI parsing and app launch
+    let cli = Cli::parse();
+
+    match cli.command {
+        Some(Commands::Random { translation }) => {
+            let conn = db::open_db();
+            match db::get_random_verse(&conn, &translation) {
+                Some(verse) => {
+                    println!(
+                        "{} {}:{} — {}",
+                        verse.book, verse.chapter, verse.verse, verse.text
+                    );
+                }
+                None => {
+                    eprintln!("No verses found for translation: {translation}");
+                    std::process::exit(1);
+                }
+            }
+        }
+        None => {
+            let mut app = app::App::new(cli.no_banner);
+            if let Err(err) = app.run() {
+                ratatui::restore();
+                eprintln!("Error: {err}");
+                std::process::exit(1);
+            }
+        }
+    }
 }
