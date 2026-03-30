@@ -14,7 +14,7 @@ Mouse clicks focus panels and select items. Scroll wheel scrolls the Scripture p
 - **FR-1**: Left click on a Books panel row selects and focuses that book
 - **FR-2**: Left click on a Chapters panel row selects and focuses that chapter
 - **FR-3**: Left click on a Verses panel row selects and focuses that verse; triggers chapter load
-- **FR-4**: Scroll up/down in the Scripture panel scrolls the text
+- **FR-4**: Scroll up/down in any panel scrolls its content (list selection in Books/Chapters/Verses, text offset in Scripture)
 - **FR-5**: Mouse clicks work in any overlay that contains a list (bookmarks, translation picker)
 
 ### Non-Functional
@@ -27,7 +27,7 @@ Mouse clicks focus panels and select items. Scroll wheel scrolls the Scripture p
 1. User clicks a book name in the Books panel → Books panel becomes active, that book is selected
 2. User clicks a chapter number → Chapters panel becomes active, chapter selected
 3. User clicks a verse → Verses panel active, verse selected, chapter loads, Scripture updates
-4. User scrolls in the Scripture panel → text scrolls up or down
+4. User scrolls in any panel → list selection moves (Books/Chapters/Verses) or text scrolls (Scripture)
 5. User clicks a bookmark in the Bookmark overlay → navigates to that verse
 
 ## Technical Design
@@ -102,15 +102,20 @@ fn handle_mouse(mouse: MouseEvent, state: &mut BrowserState) {
                 // Trigger chapter load
             }
         }
-        MouseEventKind::ScrollUp => {
-            if hit_test(mouse.column, mouse.row, state.scripture_rect) {
-                state.scripture_scroll = state.scripture_scroll.saturating_sub(1);
+        MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
+            // Scroll moves selection in list panels, text offset in Scripture
+            let (col, row) = (mouse.column, mouse.row);
+            if hit_test(col, row, state.books_rect) {
+                state.active_panel = Panel::Books;
+                // move_up / move_down on BrowserState
+            } else if hit_test(col, row, state.chapters_rect) {
+                state.active_panel = Panel::Chapters;
+            } else if hit_test(col, row, state.verses_rect) {
+                state.active_panel = Panel::Verses;
+            } else if hit_test(col, row, state.scripture_rect) {
+                state.active_panel = Panel::Scripture;
             }
-        }
-        MouseEventKind::ScrollDown => {
-            if hit_test(mouse.column, mouse.row, state.scripture_rect) {
-                state.scripture_scroll = state.scripture_scroll.saturating_add(1);
-            }
+            // delegate to move_up() / move_down()
         }
         _ => {}
     }
