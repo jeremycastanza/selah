@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use ratatui::Frame;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind};
-use ratatui::layout::{Alignment, Constraint, Layout};
+use ratatui::layout::Alignment;
 use ratatui::style::Style;
 use ratatui::widgets::{Block, Paragraph};
 use rusqlite::Connection;
@@ -11,12 +11,12 @@ use rusqlite::Connection;
 use crate::bible::db;
 use crate::config::session::{self, SessionState};
 use crate::ui::banner::BannerState;
-use crate::ui::browser::BrowserState;
+use crate::ui::browser::{self, BrowserState};
 use crate::ui::theme::{ThemeName, get_theme};
 
 pub enum AppMode {
     Banner(BannerState),
-    Browser(BrowserState),
+    Browser(Box<BrowserState>),
 }
 
 pub struct App {
@@ -35,7 +35,7 @@ impl App {
         let theme_name = session.theme;
 
         let mode = if no_banner {
-            AppMode::Browser(BrowserState::new(session.translation.clone()))
+            AppMode::Browser(Box::new(BrowserState::new(&db, &session)))
         } else {
             AppMode::Banner(BannerState::new())
         };
@@ -74,7 +74,7 @@ impl App {
                 state.tick();
                 if state.done {
                     self.mode =
-                        AppMode::Browser(BrowserState::new(self.session.translation.clone()));
+                        AppMode::Browser(Box::new(BrowserState::new(&self.db, &self.session)));
                 }
             }
 
@@ -93,26 +93,43 @@ impl App {
             AppMode::Banner(ref mut state) => {
                 state.done = true;
             }
-            AppMode::Browser(_) => match key {
-                KeyCode::Char('q') => {
-                    if self.quit_pending {
-                        self.should_quit = true;
-                    } else {
-                        self.quit_pending = true;
+            AppMode::Browser(ref mut state) => {
+                if state.overlay.is_some() {
+                    return;
+                }
+
+                match key {
+                    KeyCode::Char('q') => {
+                        if self.quit_pending {
+                            self.should_quit = true;
+                        } else {
+                            self.quit_pending = true;
+                        }
+                        return;
                     }
+                    KeyCode::Char('t') => {
+                        self.theme_name = self.theme_name.next();
+                    }
+                    KeyCode::Char('j') | KeyCode::Down => {
+                        state.move_down();
+                    }
+                    KeyCode::Char('k') | KeyCode::Up => {
+                        state.move_up();
+                    }
+                    KeyCode::Char('h') | KeyCode::Left => {
+                        state.focus_prev();
+                    }
+                    KeyCode::Char('l') | KeyCode::Right | KeyCode::Enter => {
+                        state.focus_next(&self.db);
+                    }
+                    _ => {}
                 }
-                KeyCode::Char('t') => {
-                    self.theme_name = self.theme_name.next();
-                    self.quit_pending = false;
-                }
-                _ => {
-                    self.quit_pending = false;
-                }
-            },
+                self.quit_pending = false;
+            }
         }
     }
 
-    fn draw(&self, frame: &mut Frame) {
+    fn draw(&mut self, frame: &mut Frame) {
         let theme = get_theme(self.theme_name);
 
         match self.mode {
@@ -126,44 +143,28 @@ impl App {
                     .alignment(Alignment::Center);
                 frame.render_widget(text, area);
             }
-            AppMode::Browser(ref state) => {
-                let area = frame.area();
-
-                let [main_area, status_area] =
-                    Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).areas(area);
-
-                let main_block = Block::default().style(Style::default().bg(theme.bg));
-                frame.render_widget(main_block, main_area);
-
-                let quit_hint = if self.quit_pending {
-                    "press q again to quit"
-                } else {
-                    "q: quit | t: theme | /: search | b: bookmark | r: random | v: version"
-                };
-                let status_text = format!(
-                    " {} │ {} │ {}",
-                    quit_hint,
-                    state.translation,
+            AppMode::Browser(ref mut state) => {
+                browser::render_browser(
+                    frame,
+                    frame.area(),
+                    state,
+                    self.quit_pending,
+                    &theme,
                     self.theme_name.label(),
                 );
-                let status = Paragraph::new(status_text)
-                    .style(Style::default().fg(theme.text).bg(theme.surface));
-                frame.render_widget(status, status_area);
             }
         }
     }
 
     fn save_session(&self) {
-        let translation = match self.mode {
-            AppMode::Browser(ref state) => state.translation.clone(),
-            _ => self.session.translation.clone(),
-        };
-
-        let state = SessionState {
-            theme: self.theme_name,
-            translation,
-            ..SessionState::default()
-        };
-        session::save(&state);
+        if let AppMode::Browser(ref state) = self.mode {
+            session::save(&state.to_session(self.theme_name));
+        } else {
+            let state = SessionState {
+                theme: self.theme_name,
+                ..SessionState::default()
+            };
+            session::save(&state);
+        }
     }
 }

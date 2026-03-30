@@ -1,4 +1,5 @@
 use std::fs;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use rusqlite::Connection;
 
@@ -7,8 +8,12 @@ use super::types::{SearchResult, Verse};
 
 const KJV_DB: &[u8] = include_bytes!("../../data/kjv.sqlite");
 
+static DB_COUNTER: AtomicU32 = AtomicU32::new(0);
+
 pub fn open_db() -> Connection {
-    let tmp_path = std::env::temp_dir().join("selah-kjv.sqlite");
+    let id = DB_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let tmp_path =
+        std::env::temp_dir().join(format!("selah-kjv-{}-{id}.sqlite", std::process::id()));
     fs::write(&tmp_path, KJV_DB).expect("Failed to write KJV database to temp dir");
     let conn = Connection::open(&tmp_path).expect("Failed to open KJV database");
     conn.execute_batch("PRAGMA journal_mode=OFF; PRAGMA synchronous=OFF;")
