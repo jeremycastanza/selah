@@ -1,7 +1,8 @@
 use std::time::Instant;
 
+use crossterm::event::{MouseEvent, MouseEventKind};
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::layout::{Constraint, Layout, Position, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph, Wrap};
@@ -210,9 +211,8 @@ impl BrowserState {
     pub fn focus_next(&mut self, conn: &Connection) {
         let next = self.active_panel.next();
         if next != self.active_panel {
-            if next == Panel::Verses {
-                self.load_chapter(conn);
-            } else if next == Panel::Scripture && self.current_chapter.is_none() {
+            if next == Panel::Verses || (next == Panel::Scripture && self.current_chapter.is_none())
+            {
                 self.load_chapter(conn);
             }
             self.active_panel = next;
@@ -256,6 +256,84 @@ impl BrowserState {
         }
     }
 
+    pub fn handle_mouse(&mut self, mouse: MouseEvent, conn: &Connection) {
+        let pos = Position::new(mouse.column, mouse.row);
+
+        match mouse.kind {
+            MouseEventKind::Down(crossterm::event::MouseButton::Left) => {
+                // Border takes 1 row at top, so content offset is y + 1
+                if self.books_rect.contains(pos) {
+                    self.active_panel = Panel::Books;
+                    let row = mouse.row.saturating_sub(self.books_rect.y + 1) as usize;
+                    let offset = self.book_list.offset();
+                    let idx = offset + row;
+                    if idx < BOOKS.len() {
+                        self.book_list.select(Some(idx));
+                        self.selected_book_idx = idx;
+                        self.reset_chapter_selection();
+                    }
+                } else if self.chapters_rect.contains(pos) {
+                    self.active_panel = Panel::Chapters;
+                    let row = mouse.row.saturating_sub(self.chapters_rect.y + 1) as usize;
+                    let offset = self.chapter_list.offset();
+                    let idx = offset + row;
+                    let max = BOOKS[self.selected_book_idx].chapters as usize;
+                    if idx < max {
+                        self.chapter_list.select(Some(idx));
+                        self.selected_chapter = (idx + 1) as u32;
+                        self.load_chapter(conn);
+                    }
+                } else if self.verses_rect.contains(pos) {
+                    self.active_panel = Panel::Verses;
+                    if self.current_chapter.is_none() {
+                        self.load_chapter(conn);
+                    }
+                    let verse_count = self
+                        .current_chapter
+                        .as_ref()
+                        .map(|c| c.verses.len())
+                        .unwrap_or(0);
+                    if verse_count > 0 {
+                        let row = mouse.row.saturating_sub(self.verses_rect.y + 1) as usize;
+                        let offset = self.verse_list.offset();
+                        let idx = offset + row;
+                        if idx < verse_count {
+                            self.verse_list.select(Some(idx));
+                            self.selected_verse = (idx + 1) as u32;
+                            self.scripture_scroll = 0;
+                        }
+                    }
+                } else if self.scripture_rect.contains(pos) {
+                    self.active_panel = Panel::Scripture;
+                }
+            }
+            MouseEventKind::ScrollDown | MouseEventKind::ScrollUp => {
+                let is_down = matches!(mouse.kind, MouseEventKind::ScrollDown);
+                let panel = if self.books_rect.contains(pos) {
+                    Some(Panel::Books)
+                } else if self.chapters_rect.contains(pos) {
+                    Some(Panel::Chapters)
+                } else if self.verses_rect.contains(pos) {
+                    Some(Panel::Verses)
+                } else if self.scripture_rect.contains(pos) {
+                    Some(Panel::Scripture)
+                } else {
+                    None
+                };
+
+                if let Some(panel) = panel {
+                    self.active_panel = panel;
+                    if is_down {
+                        self.move_down();
+                    } else {
+                        self.move_up();
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
     fn reset_chapter_selection(&mut self) {
         self.chapter_list.select(Some(0));
         self.selected_chapter = 1;
@@ -264,6 +342,10 @@ impl BrowserState {
         self.selected_verse = 0;
         self.scripture_scroll = 0;
     }
+}
+
+pub fn hit_test(col: u16, row: u16, rect: Rect) -> bool {
+    rect.contains(Position::new(col, row))
 }
 
 pub fn render_browser(
@@ -492,6 +574,32 @@ mod tests {
         state.focus_next(&conn);
         assert_eq!(state.active_panel, Panel::Scripture);
         assert!(state.current_chapter.is_some());
+    }
+
+    #[test]
+    fn hit_test_inside_rect() {
+        let rect = Rect::new(10, 10, 20, 10);
+        assert!(hit_test(15, 15, rect));
+        assert!(hit_test(10, 10, rect)); // top-left edge
+        assert!(hit_test(29, 19, rect)); // bottom-right edge (x+w-1, y+h-1)
+    }
+
+    #[test]
+    fn hit_test_outside_rect() {
+        let rect = Rect::new(10, 10, 20, 10);
+        assert!(!hit_test(9, 15, rect)); // left of rect
+        assert!(!hit_test(30, 15, rect)); // right of rect
+        assert!(!hit_test(15, 9, rect)); // above rect
+        assert!(!hit_test(15, 20, rect)); // below rect
+    }
+
+    #[test]
+    fn hit_test_boundary_coordinates() {
+        let rect = Rect::new(0, 0, 10, 5);
+        assert!(hit_test(0, 0, rect)); // origin
+        assert!(hit_test(9, 4, rect)); // last valid point
+        assert!(!hit_test(10, 0, rect)); // one past right
+        assert!(!hit_test(0, 5, rect)); // one past bottom
     }
 
     #[test]

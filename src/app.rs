@@ -51,6 +51,7 @@ impl App {
     }
 
     pub fn run(&mut self) -> io::Result<()> {
+        crossterm::execute!(io::stdout(), crossterm::event::EnableMouseCapture)?;
         let mut terminal = ratatui::init();
 
         loop {
@@ -65,6 +66,9 @@ impl App {
                 match event::read()? {
                     Event::Key(key) if key.kind == KeyEventKind::Press => {
                         self.handle_key(key.code);
+                    }
+                    Event::Mouse(mouse) => {
+                        self.handle_mouse(mouse);
                     }
                     _ => {}
                 }
@@ -85,6 +89,7 @@ impl App {
 
         self.save_session();
         ratatui::restore();
+        crossterm::execute!(io::stdout(), crossterm::event::DisableMouseCapture)?;
         Ok(())
     }
 
@@ -126,6 +131,16 @@ impl App {
                 }
                 self.quit_pending = false;
             }
+        }
+    }
+
+    fn handle_mouse(&mut self, mouse: crossterm::event::MouseEvent) {
+        if let AppMode::Browser(ref mut state) = self.mode {
+            if state.overlay.is_some() {
+                return;
+            }
+            state.handle_mouse(mouse, &self.db);
+            self.quit_pending = false;
         }
     }
 
