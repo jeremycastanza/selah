@@ -9,16 +9,16 @@ Combine the best features of the `christ` (Rust) and `bible` (JavaScript) fork p
 ## Success Criteria
 
 From the `bible` fork:
-- [ ] Clean TUI interface
-- [ ] Random verse option
-- [ ] Mouse click interaction
-- [ ] Bookmark functionality
+- [x] Clean TUI interface
+- [x] Random verse option
+- [x] Mouse click interaction
+- [ ] Bookmark functionality _(Phase 7)_
 
 From the `christ` fork:
-- [ ] Robust splash screen
-- [ ] Theme toggle
-- [ ] Search functionality
-- [ ] Bible version toggling
+- [ ] Robust splash screen _(Phase 8 — banner is placeholder)_
+- [x] Theme toggle
+- [x] Search functionality
+- [ ] Bible version toggling _(Phase 7)_
 
 ## Constraints
 
@@ -35,7 +35,7 @@ From the `christ` fork:
 
 ## Current Plan
 
-_No active plan yet._
+`docs/plans/v0.1.0-implementation.md` — Phases 1–6 complete, Phase 7 is next.
 
 ## Notes
 

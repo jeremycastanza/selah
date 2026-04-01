@@ -1,54 +1,31 @@
 # Known Issues
 
-_Last updated: YYYY-MM-DD_
+_Last updated: 2026-04-01_
 
 ## Overview
 
-This document tracks known issues, limitations, and workarounds for the project.
+No active issues at this time. All 28 unit tests pass. `cargo clippy -- -D warnings` and `cargo fmt --check` are clean.
 
 ## Active Issues
 
-### [Issue Title]
-
-- **Status:** Active
-- **Severity:** High | Medium | Low
-- **Affected Area:** [Component or feature]
-- **Since:** YYYY-MM-DD
-
-**Description:**
-
-[What happens and under what conditions.]
-
-**Workaround:**
-
-[Steps to mitigate the issue, or "None" if no workaround exists.]
-
-**Tracking:** [Link to issue tracker, or "N/A"]
-
----
+None.
 
 ## Limitations
 
 | Area | Limitation | Impact | Planned Fix? |
 |------|-----------|--------|--------------|
-| [Component] | [What can't be done] | [Who/what is affected] | Yes / No / TBD |
+| Bible version | Only KJV is bundled | Users cannot switch translations | Yes — Phase 7 |
+| Bookmarks | Stub only; not functional | Users cannot save verses | Yes — Phase 7 |
+| Splash screen | Banner is placeholder text | No visual splash on startup | Yes — Phase 8 |
+| FTS5 index | Built at runtime, not persisted | ~100ms startup cost on first search | No (acceptable) |
 
 ## Environment-Specific Issues
 
-### [Environment Name]
-
-| Issue | Trigger | Workaround |
-|-------|---------|------------|
-| [Description] | [What causes it] | [How to work around it] |
+None known.
 
 ## Resolved Issues
 
-_Move issues here when fixed. Include the resolution date and fix reference._
-
-### [Resolved Issue Title]
-
-- **Resolved:** YYYY-MM-DD
-- **Fix:** [Brief description or link to PR/commit]
+None yet.
 
 ## Related Documents
 
