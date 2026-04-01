@@ -12,6 +12,7 @@ use crate::bible::books::BOOKS;
 use crate::bible::db;
 use crate::bible::types::Chapter;
 use crate::config::session::SessionState;
+use crate::ui::search::{SearchState, render_search};
 use crate::ui::theme::Theme;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,7 +43,9 @@ impl Panel {
     }
 }
 
-pub enum OverlayKind {}
+pub enum OverlayKind {
+    Search(SearchState),
+}
 
 pub struct BrowserState {
     pub active_panel: Panel,
@@ -238,6 +241,21 @@ impl BrowserState {
         self.verse_list.select(None);
         self.selected_verse = 0;
         self.scripture_scroll = 0;
+    }
+
+    pub fn jump_to_verse(&mut self, conn: &Connection, book_num: u32, chapter: u32, verse: u32) {
+        self.selected_book_idx = book_num.saturating_sub(1) as usize;
+        self.selected_chapter = chapter;
+        self.book_list.select(Some(self.selected_book_idx));
+        self.chapter_list
+            .select(Some(chapter.saturating_sub(1) as usize));
+        self.load_chapter(conn); // resets verse_list + selected_verse + scripture_scroll
+        if verse > 0 {
+            self.verse_list
+                .select(Some(verse.saturating_sub(1) as usize));
+            self.selected_verse = verse;
+        }
+        self.active_panel = Panel::Scripture;
     }
 
     pub fn to_session(&self, theme: crate::ui::theme::ThemeName) -> SessionState {
@@ -477,6 +495,11 @@ pub fn render_browser(
     let status =
         Paragraph::new(status_text).style(Style::default().fg(theme.text).bg(theme.surface));
     frame.render_widget(status, status_area);
+
+    // Render overlays on top
+    if let Some(OverlayKind::Search(ref mut search_state)) = state.overlay {
+        render_search(frame, area, search_state, theme);
+    }
 }
 
 fn panel_block<'a>(title: &'a str, active: bool, theme: &Theme) -> Block<'a> {

@@ -167,6 +167,13 @@ mod tests {
     }
 
     #[test]
+    fn search_love_returns_results() {
+        let conn = test_db();
+        let results = search(&conn, "love", "kjv");
+        assert!(!results.is_empty());
+    }
+
+    #[test]
     fn search_faith_returns_results() {
         let conn = test_db();
         let results = search(&conn, "faith", "kjv");

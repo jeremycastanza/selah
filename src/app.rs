@@ -8,10 +8,13 @@ use ratatui::style::Style;
 use ratatui::widgets::{Block, Paragraph};
 use rusqlite::Connection;
 
+use std::time::Instant;
+
 use crate::bible::db;
 use crate::config::session::{self, SessionState};
 use crate::ui::banner::BannerState;
-use crate::ui::browser::{self, BrowserState};
+use crate::ui::browser::{self, BrowserState, OverlayKind};
+use crate::ui::search::SearchState;
 use crate::ui::theme::{ThemeName, get_theme};
 
 pub enum AppMode {
@@ -99,7 +102,84 @@ impl App {
                 state.done = true;
             }
             AppMode::Browser(ref mut state) => {
+                // Handle search overlay keys
                 if state.overlay.is_some() {
+                    let translation = state.translation.clone();
+                    let mut close_overlay = false;
+                    let mut jump_target: Option<(u32, u32, u32)> = None;
+
+                    if let Some(OverlayKind::Search(ref mut search)) = state.overlay {
+                        match key {
+                            KeyCode::Char(c) => {
+                                search.query.push(c);
+                                if search.query.len() >= 3 {
+                                    let results = db::search(&self.db, &search.query, &translation);
+                                    search.list_state.select(if results.is_empty() {
+                                        None
+                                    } else {
+                                        Some(0)
+                                    });
+                                    search.results = results;
+                                } else {
+                                    search.results.clear();
+                                    search.list_state.select(None);
+                                }
+                            }
+                            KeyCode::Backspace => {
+                                search.query.pop();
+                                if search.query.len() >= 3 {
+                                    let results = db::search(&self.db, &search.query, &translation);
+                                    search.list_state.select(if results.is_empty() {
+                                        None
+                                    } else {
+                                        Some(0)
+                                    });
+                                    search.results = results;
+                                } else {
+                                    search.results.clear();
+                                    search.list_state.select(None);
+                                }
+                            }
+                            KeyCode::Up => {
+                                if let Some(i) = search.list_state.selected()
+                                    && i > 0
+                                {
+                                    search.list_state.select(Some(i - 1));
+                                }
+                            }
+                            KeyCode::Down => {
+                                let max = search.results.len();
+                                if max > 0 {
+                                    let next = search
+                                        .list_state
+                                        .selected()
+                                        .map(|i| (i + 1).min(max - 1))
+                                        .unwrap_or(0);
+                                    search.list_state.select(Some(next));
+                                }
+                            }
+                            KeyCode::Enter => {
+                                if let Some(i) = search.list_state.selected()
+                                    && let Some(result) = search.results.get(i)
+                                {
+                                    jump_target =
+                                        Some((result.book_num, result.chapter, result.verse));
+                                    close_overlay = true;
+                                }
+                            }
+                            KeyCode::Esc => {
+                                close_overlay = true;
+                            }
+                            _ => {}
+                        }
+                    }
+
+                    if close_overlay {
+                        state.overlay = None;
+                    }
+                    if let Some((book_num, chapter, verse)) = jump_target {
+                        state.jump_to_verse(&self.db, book_num, chapter, verse);
+                    }
                     return;
                 }
 
@@ -114,6 +194,22 @@ impl App {
                     }
                     KeyCode::Char('t') => {
                         self.theme_name = self.theme_name.next();
+                    }
+                    KeyCode::Char('/') => {
+                        state.overlay = Some(OverlayKind::Search(SearchState::default()));
+                    }
+                    KeyCode::Char('r') => {
+                        if let Some(verse) = db::get_random_verse(&self.db, &state.translation) {
+                            let flash =
+                                format!("→ {} {}:{}", verse.book, verse.chapter, verse.verse);
+                            state.jump_to_verse(
+                                &self.db,
+                                verse.book_num,
+                                verse.chapter,
+                                verse.verse,
+                            );
+                            state.status_flash = Some((flash, Instant::now()));
+                        }
                     }
                     KeyCode::Char('j') | KeyCode::Down => {
                         state.move_down();
