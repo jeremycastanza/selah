@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "bash ~/.lexicon/scripts/check-doc-freshness.sh 2>/dev/null || true"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "type": "command",
+        "command": "bash ~/.lexicon/scripts/lint-format.sh 2>/dev/null || true"
+      }
+    ]
+  }
+}
