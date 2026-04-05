@@ -11,11 +11,15 @@ use rusqlite::Connection;
 use std::time::Instant;
 
 use crate::bible::db;
+use crate::bible::TRANSLATIONS;
+use crate::config::bookmarks::{self as bm, BookmarkEntry};
 use crate::config::session::{self, SessionState};
 use crate::ui::banner::BannerState;
+use crate::ui::bookmarks::BookmarkListState;
 use crate::ui::browser::{self, BrowserState, OverlayKind};
 use crate::ui::search::SearchState;
 use crate::ui::theme::{ThemeName, get_theme};
+use crate::ui::translation::TranslationPickerState;
 
 pub enum AppMode {
     Banner(BannerState),
@@ -28,6 +32,7 @@ pub struct App {
     pub db: Connection,
     pub quit_pending: bool,
     pub should_quit: bool,
+    pub bookmarks: Vec<BookmarkEntry>,
     session: SessionState,
 }
 
@@ -49,6 +54,7 @@ impl App {
             db,
             quit_pending: false,
             should_quit: false,
+            bookmarks: bm::load(),
             session,
         }
     }
@@ -102,14 +108,16 @@ impl App {
                 state.done = true;
             }
             AppMode::Browser(ref mut state) => {
-                // Handle search overlay keys
+                // Handle overlay keys
                 if state.overlay.is_some() {
                     let translation = state.translation.clone();
                     let mut close_overlay = false;
                     let mut jump_target: Option<(u32, u32, u32)> = None;
+                    let mut delete_bookmark: Option<usize> = None;
+                    let mut new_translation: Option<String> = None;
 
-                    if let Some(OverlayKind::Search(ref mut search)) = state.overlay {
-                        match key {
+                    match state.overlay {
+                        Some(OverlayKind::Search(ref mut search)) => match key {
                             KeyCode::Char(c) => {
                                 search.query.push(c);
                                 if search.query.len() >= 3 {
@@ -167,18 +175,101 @@ impl App {
                                     close_overlay = true;
                                 }
                             }
-                            KeyCode::Esc => {
-                                close_overlay = true;
-                            }
+                            KeyCode::Esc => close_overlay = true,
                             _ => {}
-                        }
+                        },
+                        Some(OverlayKind::Bookmarks(ref mut bmark)) => match key {
+                            KeyCode::Char('j') | KeyCode::Down => {
+                                let max = self.bookmarks.len();
+                                if max > 0 {
+                                    let next = bmark
+                                        .list_state
+                                        .selected()
+                                        .map(|i| (i + 1).min(max - 1))
+                                        .unwrap_or(0);
+                                    bmark.list_state.select(Some(next));
+                                }
+                            }
+                            KeyCode::Char('k') | KeyCode::Up => {
+                                if let Some(i) = bmark.list_state.selected()
+                                    && i > 0
+                                {
+                                    bmark.list_state.select(Some(i - 1));
+                                }
+                            }
+                            KeyCode::Enter => {
+                                if let Some(i) = bmark.list_state.selected()
+                                    && let Some(b) = self.bookmarks.get(i)
+                                {
+                                    // look up book_num from name
+                                    let book_num = crate::bible::books::BOOKS
+                                        .iter()
+                                        .position(|bk| bk.name == b.book)
+                                        .map(|p| (p + 1) as u32)
+                                        .unwrap_or(1);
+                                    jump_target = Some((book_num, b.chapter, b.verse));
+                                    close_overlay = true;
+                                }
+                            }
+                            KeyCode::Char('d') => {
+                                if let Some(i) = bmark.list_state.selected() {
+                                    delete_bookmark = Some(i);
+                                    // keep selection valid after removal
+                                    let new_len = self.bookmarks.len().saturating_sub(1);
+                                    if new_len == 0 {
+                                        bmark.list_state.select(None);
+                                    } else {
+                                        bmark.list_state.select(Some(i.min(new_len - 1)));
+                                    }
+                                }
+                            }
+                            KeyCode::Esc => close_overlay = true,
+                            _ => {}
+                        },
+                        Some(OverlayKind::Translation(ref mut picker)) => match key {
+                            KeyCode::Char('j') | KeyCode::Down => {
+                                let max = TRANSLATIONS.len();
+                                let next = picker
+                                    .list_state
+                                    .selected()
+                                    .map(|i| (i + 1).min(max - 1))
+                                    .unwrap_or(0);
+                                picker.list_state.select(Some(next));
+                            }
+                            KeyCode::Char('k') | KeyCode::Up => {
+                                if let Some(i) = picker.list_state.selected()
+                                    && i > 0
+                                {
+                                    picker.list_state.select(Some(i - 1));
+                                }
+                            }
+                            KeyCode::Enter => {
+                                if let Some(i) = picker.list_state.selected()
+                                    && let Some(t) = TRANSLATIONS.get(i)
+                                    && t.offline
+                                {
+                                    new_translation = Some(t.code.to_string());
+                                    close_overlay = true;
+                                }
+                            }
+                            KeyCode::Esc | KeyCode::Char('v') => close_overlay = true,
+                            _ => {}
+                        },
+                        None => {}
                     }
 
                     if close_overlay {
                         state.overlay = None;
                     }
+                    if let Some(idx) = delete_bookmark {
+                        bm::remove(&mut self.bookmarks, idx);
+                    }
                     if let Some((book_num, chapter, verse)) = jump_target {
                         state.jump_to_verse(&self.db, book_num, chapter, verse);
+                    }
+                    if let Some(code) = new_translation {
+                        state.translation = code;
+                        state.load_chapter(&self.db);
                     }
                     return;
                 }
@@ -197,6 +288,45 @@ impl App {
                     }
                     KeyCode::Char('/') => {
                         state.overlay = Some(OverlayKind::Search(SearchState::default()));
+                    }
+                    KeyCode::Char('b') => {
+                        let verse_num = if state.selected_verse > 0 {
+                            state.selected_verse
+                        } else {
+                            1
+                        };
+                        let snippet = state
+                            .current_chapter
+                            .as_ref()
+                            .and_then(|ch| ch.verses.get((verse_num - 1) as usize))
+                            .map(|v| v.text.chars().take(60).collect::<String>());
+                        let book = crate::bible::books::BOOKS[state.selected_book_idx].name.to_string();
+                        let flash = format!("Bookmarked {} {}:{}", book, state.selected_chapter, verse_num);
+                        let entry = BookmarkEntry {
+                            book,
+                            chapter: state.selected_chapter,
+                            verse: verse_num,
+                            snippet,
+                            note: None,
+                            created_at: bm::now_unix(),
+                        };
+                        bm::add(&mut self.bookmarks, entry);
+                        state.status_flash = Some((flash, Instant::now()));
+                    }
+                    KeyCode::Char('B') => {
+                        let mut bmark_state = BookmarkListState::default();
+                        if !self.bookmarks.is_empty() {
+                            bmark_state.list_state.select(Some(0));
+                        }
+                        state.overlay = Some(OverlayKind::Bookmarks(bmark_state));
+                    }
+                    KeyCode::Char('v') => {
+                        // Pre-select the currently active translation
+                        let mut picker = TranslationPickerState::default();
+                        if let Some(idx) = TRANSLATIONS.iter().position(|t| t.code == state.translation) {
+                            picker.list_state.select(Some(idx));
+                        }
+                        state.overlay = Some(OverlayKind::Translation(picker));
                     }
                     KeyCode::Char('r') => {
                         if let Some(verse) = db::get_random_verse(&self.db, &state.translation) {
@@ -262,6 +392,7 @@ impl App {
                     self.quit_pending,
                     &theme,
                     self.theme_name.label(),
+                    &self.bookmarks,
                 );
             }
         }

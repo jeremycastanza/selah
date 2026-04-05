@@ -11,9 +11,12 @@ use rusqlite::Connection;
 use crate::bible::books::BOOKS;
 use crate::bible::db;
 use crate::bible::types::Chapter;
+use crate::config::bookmarks::BookmarkEntry;
 use crate::config::session::SessionState;
+use crate::ui::bookmarks::{BookmarkListState, render_bookmarks};
 use crate::ui::search::{SearchState, render_search};
 use crate::ui::theme::Theme;
+use crate::ui::translation::{TranslationPickerState, render_translation_picker};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Panel {
@@ -45,6 +48,8 @@ impl Panel {
 
 pub enum OverlayKind {
     Search(SearchState),
+    Bookmarks(BookmarkListState),
+    Translation(TranslationPickerState),
 }
 
 pub struct BrowserState {
@@ -373,6 +378,7 @@ pub fn render_browser(
     quit_pending: bool,
     theme: &Theme,
     theme_label: &str,
+    bookmarks: &[BookmarkEntry],
 ) {
     let [browser_area, status_area] =
         Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).areas(area);
@@ -497,8 +503,16 @@ pub fn render_browser(
     frame.render_widget(status, status_area);
 
     // Render overlays on top
-    if let Some(OverlayKind::Search(ref mut search_state)) = state.overlay {
-        render_search(frame, area, search_state, theme);
+    if let Some(ref mut overlay) = state.overlay {
+        match overlay {
+            OverlayKind::Search(s) => render_search(frame, area, s, theme),
+            OverlayKind::Bookmarks(b) => {
+                render_bookmarks(frame, area, b, bookmarks, theme)
+            }
+            OverlayKind::Translation(t) => {
+                render_translation_picker(frame, area, t, &state.translation, theme)
+            }
+        }
     }
 }
 
