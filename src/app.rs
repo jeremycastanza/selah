@@ -3,9 +3,6 @@ use std::time::Duration;
 
 use ratatui::Frame;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind};
-use ratatui::layout::Alignment;
-use ratatui::style::Style;
-use ratatui::widgets::{Block, Paragraph};
 use rusqlite::Connection;
 
 use std::time::Instant;
@@ -14,7 +11,7 @@ use crate::bible::db;
 use crate::bible::TRANSLATIONS;
 use crate::config::bookmarks::{self as bm, BookmarkEntry};
 use crate::config::session::{self, SessionState};
-use crate::ui::banner::BannerState;
+use crate::ui::banner::{self, BannerState};
 use crate::ui::bookmarks::BookmarkListState;
 use crate::ui::browser::{self, BrowserState, OverlayKind};
 use crate::ui::search::SearchState;
@@ -286,6 +283,10 @@ impl App {
                     KeyCode::Char('t') => {
                         self.theme_name = self.theme_name.next();
                     }
+                    KeyCode::Char('?') => {
+                        self.mode = AppMode::Banner(BannerState::new());
+                        return;
+                    }
                     KeyCode::Char('/') => {
                         state.overlay = Some(OverlayKind::Search(SearchState::default()));
                     }
@@ -374,15 +375,8 @@ impl App {
         let theme = get_theme(self.theme_name);
 
         match self.mode {
-            AppMode::Banner(_) => {
-                let area = frame.area();
-                let block = Block::default().style(Style::default().bg(theme.bg));
-                frame.render_widget(block, area);
-
-                let text = Paragraph::new("S E L A H")
-                    .style(Style::default().fg(theme.accent))
-                    .alignment(Alignment::Center);
-                frame.render_widget(text, area);
+            AppMode::Banner(ref state) => {
+                banner::render_banner(frame, frame.area(), state, &theme);
             }
             AppMode::Browser(ref mut state) => {
                 browser::render_browser(

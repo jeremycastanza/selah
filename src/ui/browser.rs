@@ -494,7 +494,7 @@ pub fn render_browser(
     } else if quit_pending {
         "press q again to quit".to_string()
     } else {
-        "q: quit | t: theme | /: search | b: bookmark | r: random | v: version".to_string()
+        "q: quit | t: theme | /: search | b: bookmark | r: random | v: version | ?: splash".to_string()
     };
 
     let status_text = format!(" {} │ {} │ {}", status_left, state.translation, theme_label,);
