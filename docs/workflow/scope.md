@@ -12,13 +12,13 @@ From the `bible` fork:
 - [x] Clean TUI interface
 - [x] Random verse option
 - [x] Mouse click interaction
-- [ ] Bookmark functionality _(Phase 7)_
+- [x] Bookmark functionality _(Phase 7)_
 
 From the `christ` fork:
-- [ ] Robust splash screen _(Phase 8 — banner is placeholder)_
+- [x] Robust splash screen _(Phase 8)_
 - [x] Theme toggle
 - [x] Search functionality
-- [ ] Bible version toggling _(Phase 7)_
+- [x] Bible version toggling _(Phase 7)_
 
 ## Constraints
 
@@ -35,7 +35,7 @@ From the `christ` fork:
 
 ## Current Plan
 
-`docs/plans/v0.1.0-implementation.md` — Phases 1–6 complete, Phase 7 is next.
+`docs/plans/v0.1.0-implementation.md` — Phases 1–8 complete, Phase 9 (CI/CD + Distribution) is next.
 
 ## Notes
 

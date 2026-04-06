@@ -33,20 +33,20 @@ The binary will be at `target/release/selah`.
 
 ## Platform Support
 
-| Platform | Status |
-|----------|--------|
-| macOS    | Supported |
-| Linux    | Supported |
+| Platform | Status                       |
+| -------- | ---------------------------- |
+| macOS    | Supported                    |
+| Linux    | Supported                    |
 | Windows  | Not supported (WSL may work) |
 
 ## Tech Stack
 
-| Layer | Technology |
-|-------|------------|
-| Language | Rust |
-| TUI framework | [Ratatui](https://github.com/ratatui/ratatui) + crossterm |
-| Data | SQLite via [rusqlite](https://github.com/rusqlite/rusqlite) (bundled) |
-| Bible data | [scrollmapper/bible_databases](https://github.com/scrollmapper/bible_databases) (MIT) |
+| Layer         | Technology                                                                            |
+| ------------- | ------------------------------------------------------------------------------------- |
+| Language      | Rust                                                                                  |
+| TUI framework | [Ratatui](https://github.com/ratatui/ratatui) + crossterm                             |
+| Data          | SQLite via [rusqlite](https://github.com/rusqlite/rusqlite) (bundled)                 |
+| Bible data    | [scrollmapper/bible_databases](https://github.com/scrollmapper/bible_databases) (MIT) |
 
 ## Docs
 
