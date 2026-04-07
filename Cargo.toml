@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 description = "A terminal Bible reader"
 license = "MIT"
+repository = "https://github.com/jeremycastanza/selah"
 
 [[bin]]
 name = "selah"
@@ -27,3 +28,7 @@ extra-translations = []
 opt-level = "z"
 lto = true
 strip = true
+
+[profile.dist]
+inherits = "release"
+lto = "thin"
