@@ -19,9 +19,9 @@ const SPLASH_ART: &[(&str, u8)] = &[
 
 fn group_color(group: u8) -> Color {
     match group {
-        0 => Color::Rgb(66, 135, 245),   // blue
-        1 => Color::Rgb(255, 200, 60),   // yellow
-        _ => Color::Rgb(210, 80, 210),   // magenta
+        0 => Color::Rgb(66, 135, 245), // blue
+        1 => Color::Rgb(255, 200, 60), // yellow
+        _ => Color::Rgb(210, 80, 210), // magenta
     }
 }
 

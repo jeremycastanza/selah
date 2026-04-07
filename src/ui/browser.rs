@@ -494,7 +494,8 @@ pub fn render_browser(
     } else if quit_pending {
         "press q again to quit".to_string()
     } else {
-        "q: quit | t: theme | /: search | b: bookmark | r: random | v: version | ?: splash".to_string()
+        "q: quit | t: theme | /: search | b: bookmark | r: random | v: version | ?: splash"
+            .to_string()
     };
 
     let status_text = format!(" {} │ {} │ {}", status_left, state.translation, theme_label,);
@@ -506,9 +507,7 @@ pub fn render_browser(
     if let Some(ref mut overlay) = state.overlay {
         match overlay {
             OverlayKind::Search(s) => render_search(frame, area, s, theme),
-            OverlayKind::Bookmarks(b) => {
-                render_bookmarks(frame, area, b, bookmarks, theme)
-            }
+            OverlayKind::Bookmarks(b) => render_bookmarks(frame, area, b, bookmarks, theme),
             OverlayKind::Translation(t) => {
                 render_translation_picker(frame, area, t, &state.translation, theme)
             }

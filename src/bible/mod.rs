@@ -12,25 +12,95 @@ pub struct TranslationInfo {
 
 pub const TRANSLATIONS: &[TranslationInfo] = &[
     // English
-    TranslationInfo { code: "KJV",   name: "King James Version",          lang: "English",    offline: true  },
-    TranslationInfo { code: "ASV",   name: "American Standard Version",   lang: "English",    offline: false },
-    TranslationInfo { code: "BBE",   name: "Bible in Basic English",      lang: "English",    offline: false },
-    TranslationInfo { code: "DARBY", name: "Darby Translation",           lang: "English",    offline: false },
-    TranslationInfo { code: "YLT",   name: "Young's Literal Translation", lang: "English",    offline: false },
-    TranslationInfo { code: "WEB",   name: "World English Bible",         lang: "English",    offline: false },
-    TranslationInfo { code: "DRC",   name: "Douay-Rheims Catholic Bible", lang: "English",    offline: false },
+    TranslationInfo {
+        code: "KJV",
+        name: "King James Version",
+        lang: "English",
+        offline: true,
+    },
+    TranslationInfo {
+        code: "ASV",
+        name: "American Standard Version",
+        lang: "English",
+        offline: false,
+    },
+    TranslationInfo {
+        code: "BBE",
+        name: "Bible in Basic English",
+        lang: "English",
+        offline: false,
+    },
+    TranslationInfo {
+        code: "DARBY",
+        name: "Darby Translation",
+        lang: "English",
+        offline: false,
+    },
+    TranslationInfo {
+        code: "YLT",
+        name: "Young's Literal Translation",
+        lang: "English",
+        offline: false,
+    },
+    TranslationInfo {
+        code: "WEB",
+        name: "World English Bible",
+        lang: "English",
+        offline: false,
+    },
+    TranslationInfo {
+        code: "DRC",
+        name: "Douay-Rheims Catholic Bible",
+        lang: "English",
+        offline: false,
+    },
     // Spanish
-    TranslationInfo { code: "RVR",   name: "Reina-Valera 1960",           lang: "Español",    offline: false },
-    TranslationInfo { code: "NVI",   name: "Nueva Versión Internacional", lang: "Español",    offline: false },
+    TranslationInfo {
+        code: "RVR",
+        name: "Reina-Valera 1960",
+        lang: "Español",
+        offline: false,
+    },
+    TranslationInfo {
+        code: "NVI",
+        name: "Nueva Versión Internacional",
+        lang: "Español",
+        offline: false,
+    },
     // French
-    TranslationInfo { code: "LSG",   name: "Louis Segond 1910",           lang: "Français",   offline: false },
-    TranslationInfo { code: "NEG",   name: "Nouvelle Edition de Genève",  lang: "Français",   offline: false },
+    TranslationInfo {
+        code: "LSG",
+        name: "Louis Segond 1910",
+        lang: "Français",
+        offline: false,
+    },
+    TranslationInfo {
+        code: "NEG",
+        name: "Nouvelle Edition de Genève",
+        lang: "Français",
+        offline: false,
+    },
     // German
-    TranslationInfo { code: "LUTH",  name: "Luther Bibel 1912",           lang: "Deutsch",    offline: false },
+    TranslationInfo {
+        code: "LUTH",
+        name: "Luther Bibel 1912",
+        lang: "Deutsch",
+        offline: false,
+    },
     // Portuguese
-    TranslationInfo { code: "ARA",   name: "Almeida Revista e Atualizada", lang: "Português", offline: false },
+    TranslationInfo {
+        code: "ARA",
+        name: "Almeida Revista e Atualizada",
+        lang: "Português",
+        offline: false,
+    },
     // Latin
-    TranslationInfo { code: "VULG",  name: "Vulgata Clementina",          lang: "Latin",      offline: false },
+    TranslationInfo {
+        code: "VULG",
+        name: "Vulgata Clementina",
+        lang: "Latin",
+        offline: false,
+    },
 ];
 
 #[cfg(test)]

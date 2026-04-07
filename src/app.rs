@@ -7,8 +7,8 @@ use rusqlite::Connection;
 
 use std::time::Instant;
 
-use crate::bible::db;
 use crate::bible::TRANSLATIONS;
+use crate::bible::db;
 use crate::config::bookmarks::{self as bm, BookmarkEntry};
 use crate::config::session::{self, SessionState};
 use crate::ui::banner::{self, BannerState};
@@ -301,8 +301,13 @@ impl App {
                             .as_ref()
                             .and_then(|ch| ch.verses.get((verse_num - 1) as usize))
                             .map(|v| v.text.chars().take(60).collect::<String>());
-                        let book = crate::bible::books::BOOKS[state.selected_book_idx].name.to_string();
-                        let flash = format!("Bookmarked {} {}:{}", book, state.selected_chapter, verse_num);
+                        let book = crate::bible::books::BOOKS[state.selected_book_idx]
+                            .name
+                            .to_string();
+                        let flash = format!(
+                            "Bookmarked {} {}:{}",
+                            book, state.selected_chapter, verse_num
+                        );
                         let entry = BookmarkEntry {
                             book,
                             chapter: state.selected_chapter,
@@ -324,7 +329,10 @@ impl App {
                     KeyCode::Char('v') => {
                         // Pre-select the currently active translation
                         let mut picker = TranslationPickerState::default();
-                        if let Some(idx) = TRANSLATIONS.iter().position(|t| t.code == state.translation) {
+                        if let Some(idx) = TRANSLATIONS
+                            .iter()
+                            .position(|t| t.code == state.translation)
+                        {
                             picker.list_state.select(Some(idx));
                         }
                         state.overlay = Some(OverlayKind::Translation(picker));
