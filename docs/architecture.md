@@ -1,6 +1,6 @@
 # Architecture
 
-_Last updated: 2026-04-01_
+_Last updated: 2026-04-08_
 
 ## Overview
 
@@ -53,7 +53,15 @@ Defines `ThemeName` (Slate, Midnight, Parchment, Gospel, Terminal), the `Theme` 
 
 ### ui/banner.rs — Splash Banner
 
-Placeholder rendering for the splash screen (Phase 8).
+Tick-based animation state machine (~60fps). Four phases: Ichthys ASCII art fade-in, SELAH block title fade-in, tagline typewriter, settle. Any keypress skips to browser; `?` replays from browser.
+
+### ui/bookmarks.rs — Bookmark Overlay
+
+Centered modal overlay listing saved bookmarks. Supports navigation (`j/k`), jump-to-verse (`Enter`), and deletion (`d`).
+
+### ui/translation.rs — Translation Picker
+
+Right-aligned modal showing available Bible translations grouped by language. Offline translations are selectable; others show `[soon]`.
 
 ### bible/db.rs — Data Access
 
@@ -114,7 +122,8 @@ selah/
 │   │   ├── banner.rs
 │   │   ├── browser.rs
 │   │   ├── search.rs
-│   │   ├── bookmarks.rs  (stub)
+│   │   ├── bookmarks.rs
+│   │   ├── translation.rs
 │   │   └── theme.rs
 │   ├── bible/
 │   │   ├── mod.rs
@@ -125,7 +134,7 @@ selah/
 │   └── config/
 │       ├── mod.rs
 │       ├── session.rs
-│       └── bookmarks.rs  (stub)
+│       └── bookmarks.rs
 ├── data/
 │   └── kjv.sqlite
 ├── docs/
@@ -136,8 +145,12 @@ selah/
 │   ├── plans/
 │   ├── specs/
 │   └── technical/
+├── .github/
+│   └── workflows/
+│       └── release.yml   # cargo-dist release pipeline
 ├── Cargo.toml
-└── Cargo.lock
+├── Cargo.lock
+└── dist-workspace.toml   # cargo-dist configuration
 ```
 
 ## Related Documents

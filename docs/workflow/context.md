@@ -1,6 +1,6 @@
 # Project Context
 
-_Last updated: 2026-04-06_
+_Last updated: 2026-04-08_
 _Target: ~200 lines_
 
 ## What This Is
@@ -96,7 +96,7 @@ Any keypress skips directly to browser. `?` in browser replays the splash.
 | Data | SQLite via rusqlite (`bundled`), sourced from scrollmapper/bible_databases |
 | CLI | clap |
 | Session storage | serde_json + directories crate |
-| Distribution | Private Homebrew tap (planned Phase 9) |
+| Distribution | cargo-dist + private Homebrew tap (`jeremycastanza/homebrew-selah-tap`) |
 
 ## Critical Files
 

@@ -1,43 +1,7 @@
 # Current Scope
 
-_Iteration started: 2026-03-25_
+_No active iteration._
 
-## Objective
+## Previous Release
 
-Combine the best features of the `christ` (Rust) and `bible` (JavaScript) fork projects into a single unified Rust TUI called Selah.
-
-## Success Criteria
-
-From the `bible` fork:
-- [x] Clean TUI interface
-- [x] Random verse option
-- [x] Mouse click interaction
-- [x] Bookmark functionality _(Phase 7)_
-
-From the `christ` fork:
-- [x] Robust splash screen _(Phase 8)_
-- [x] Theme toggle
-- [x] Search functionality
-- [x] Bible version toggling _(Phase 7)_
-
-## Constraints
-
-- Written entirely in Rust — port any JS features from `bible` fork rather than embedding Node
-- Must compile and run on macOS and Linux
-- No `unsafe` Rust
-- Must work fully offline — all Bible data bundled with the binary, no runtime network requests
-
-## We Will NOT Build
-
-- No web interface
-- No cloud sync
-- No Windows support (not a target platform)
-
-## Current Plan
-
-`docs/plans/v0.1.0-implementation.md` — Phases 1–8 complete, Phase 9 (CI/CD + Distribution) is next.
-
-## Notes
-
-- Source forks: `christ` (Rust) and `bible` (JavaScript)
-- Selah is the unified successor — not a fork of either, but a new project incorporating the best of both
+v0.1.0 — Released 2026-04-08. Plan archived at `docs/archive/plans/v0.1.0-implementation.md`.
