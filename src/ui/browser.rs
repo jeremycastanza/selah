@@ -13,9 +13,12 @@ use crate::bible::db;
 use crate::bible::types::Chapter;
 use crate::config::bookmarks::BookmarkEntry;
 use crate::config::highlights::{HighlightEntry, HighlightMap};
+use crate::config::notes::NoteEntry;
 use crate::config::session::SessionState;
 use crate::ui::bookmarks::{BookmarkListState, render_bookmarks};
 use crate::ui::highlight_list::{HighlightListState, render_highlight_list};
+use crate::ui::note_list::{NoteListState, render_note_list};
+use crate::ui::notes::{NoteEditorState, render_note_editor};
 use crate::ui::quit_confirm::render_quit_confirm;
 use crate::ui::search::{SearchState, render_search};
 use crate::ui::theme::Theme;
@@ -54,6 +57,8 @@ pub enum OverlayKind {
     Bookmarks(BookmarkListState),
     Translation(TranslationPickerState),
     Highlights(HighlightListState),
+    NoteEditor(NoteEditorState),
+    NotesList(NoteListState),
     QuitConfirm,
 }
 
@@ -404,6 +409,7 @@ pub fn render_browser(
     highlight_map: &HighlightMap,
     highlights_visible: bool,
     highlights: &[HighlightEntry],
+    notes: &[NoteEntry],
 ) {
     let [browser_area, status_area] =
         Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).areas(area);
@@ -516,9 +522,17 @@ pub fn render_browser(
                         Some(bg) => Style::default().fg(theme.text).bg(bg),
                         None => Style::default().fg(theme.text),
                     };
+                    let has_note = notes.iter().any(|n| {
+                        n.book == ch.book && n.chapter == ch.chapter && n.verse == v.verse
+                    });
+                    let verse_label = if has_note {
+                        format!("{}* ", v.verse)
+                    } else {
+                        format!("{}  ", v.verse)
+                    };
                     Line::from(vec![
                         Span::styled(
-                            format!("{}  ", v.verse),
+                            verse_label,
                             Style::default()
                                 .fg(theme.text_dim)
                                 .add_modifier(Modifier::BOLD),
@@ -548,7 +562,7 @@ pub fn render_browser(
     let status_left = if let Some((ref msg, _)) = state.status_flash {
         msg.clone()
     } else {
-        "q: quit | /: search | b: bookmark | H: highlight | r: random | v: version | ?: splash"
+        "q: quit | /: search | b: bookmark | H: highlight | n: note | r: random | ?: splash"
             .to_string()
     };
 
@@ -566,6 +580,8 @@ pub fn render_browser(
                 render_translation_picker(frame, area, t, &state.translation, theme)
             }
             OverlayKind::Highlights(h) => render_highlight_list(frame, area, h, highlights, theme),
+            OverlayKind::NoteEditor(n) => render_note_editor(frame, area, n, theme),
+            OverlayKind::NotesList(n) => render_note_list(frame, area, n, notes, theme),
             OverlayKind::QuitConfirm => render_quit_confirm(frame, area, theme),
         }
     }

@@ -11,11 +11,14 @@ use crate::bible::TRANSLATIONS;
 use crate::bible::db;
 use crate::config::bookmarks::{self as bm, BookmarkEntry};
 use crate::config::highlights::{self as hl, HighlightEntry, HighlightMap};
+use crate::config::notes::{self as notes, NoteEntry};
 use crate::config::session::{self, SessionState};
 use crate::ui::banner::{self, BannerState};
 use crate::ui::bookmarks::BookmarkListState;
 use crate::ui::browser::{self, BrowserState, OverlayKind};
 use crate::ui::highlight_list::HighlightListState;
+use crate::ui::note_list::NoteListState;
+use crate::ui::notes::NoteEditorState;
 use crate::ui::search::SearchState;
 use crate::ui::theme::{ThemeName, get_theme};
 use crate::ui::translation::TranslationPickerState;
@@ -34,6 +37,7 @@ pub struct App {
     pub highlights: Vec<HighlightEntry>,
     pub highlight_map: HighlightMap,
     pub highlights_visible: bool,
+    pub notes: Vec<NoteEntry>,
     session: SessionState,
 }
 
@@ -61,6 +65,7 @@ impl App {
             highlights,
             highlight_map,
             highlights_visible: session.highlights_visible,
+            notes: notes::load(),
             session,
         }
     }
@@ -85,7 +90,7 @@ impl App {
                         {
                             self.should_quit = true;
                         } else {
-                            self.handle_key(key.code);
+                            self.handle_key(key.code, key.modifiers);
                         }
                     }
                     Event::Mouse(mouse) => {
@@ -114,7 +119,7 @@ impl App {
         Ok(())
     }
 
-    fn handle_key(&mut self, key: KeyCode) {
+    fn handle_key(&mut self, key: KeyCode, modifiers: KeyModifiers) {
         match self.mode {
             AppMode::Banner(ref mut state) => {
                 state.done = true;
@@ -128,6 +133,8 @@ impl App {
                     let mut delete_bookmark: Option<usize> = None;
                     let mut delete_highlight: Option<usize> = None;
                     let mut new_translation: Option<String> = None;
+                    let mut save_note: Option<(String, u32, u32, String)> = None;
+                    let mut delete_note: Option<(String, u32, u32)> = None;
 
                     match state.overlay {
                         Some(OverlayKind::Search(ref mut search)) => match key {
@@ -314,6 +321,86 @@ impl App {
                             KeyCode::Esc => close_overlay = true,
                             _ => {}
                         },
+                        Some(OverlayKind::NoteEditor(ref mut editor)) => match key {
+                            KeyCode::Char('s') if modifiers.contains(KeyModifiers::CONTROL) => {
+                                let text = editor.to_text();
+                                if text.trim().is_empty() {
+                                    delete_note =
+                                        Some((editor.book.clone(), editor.chapter, editor.verse));
+                                } else {
+                                    save_note = Some((
+                                        editor.book.clone(),
+                                        editor.chapter,
+                                        editor.verse,
+                                        text,
+                                    ));
+                                }
+                                close_overlay = true;
+                            }
+                            KeyCode::Enter => editor.insert_newline(),
+                            KeyCode::Char(c) => editor.insert_char(c),
+                            KeyCode::Backspace => editor.delete_char(),
+                            KeyCode::Left => editor.move_cursor_left(),
+                            KeyCode::Right => editor.move_cursor_right(),
+                            KeyCode::Up => {
+                                let w = editor.last_width;
+                                editor.move_cursor_up(w);
+                            }
+                            KeyCode::Down => {
+                                let w = editor.last_width;
+                                editor.move_cursor_down(w);
+                            }
+                            KeyCode::Esc => close_overlay = true,
+                            _ => {}
+                        },
+                        Some(OverlayKind::NotesList(ref mut nl_state)) => match key {
+                            KeyCode::Char('j') | KeyCode::Down => {
+                                let max = self.notes.len();
+                                if max > 0 {
+                                    let next = nl_state
+                                        .list_state
+                                        .selected()
+                                        .map(|i| (i + 1).min(max - 1))
+                                        .unwrap_or(0);
+                                    nl_state.list_state.select(Some(next));
+                                }
+                            }
+                            KeyCode::Char('k') | KeyCode::Up => {
+                                if let Some(i) = nl_state.list_state.selected()
+                                    && i > 0
+                                {
+                                    nl_state.list_state.select(Some(i - 1));
+                                }
+                            }
+                            KeyCode::Enter => {
+                                if let Some(i) = nl_state.list_state.selected()
+                                    && let Some(n) = self.notes.get(i)
+                                {
+                                    let book_num = crate::bible::books::BOOKS
+                                        .iter()
+                                        .position(|bk| bk.name == n.book)
+                                        .map(|p| (p + 1) as u32)
+                                        .unwrap_or(1);
+                                    jump_target = Some((book_num, n.chapter, n.verse, None));
+                                    close_overlay = true;
+                                }
+                            }
+                            KeyCode::Char('d') => {
+                                if let Some(i) = nl_state.list_state.selected()
+                                    && let Some(n) = self.notes.get(i)
+                                {
+                                    delete_note = Some((n.book.clone(), n.chapter, n.verse));
+                                    let new_len = self.notes.len().saturating_sub(1);
+                                    if new_len == 0 {
+                                        nl_state.list_state.select(None);
+                                    } else {
+                                        nl_state.list_state.select(Some(i.min(new_len - 1)));
+                                    }
+                                }
+                            }
+                            KeyCode::Esc => close_overlay = true,
+                            _ => {}
+                        },
                         Some(OverlayKind::QuitConfirm) => match key {
                             KeyCode::Char('y') | KeyCode::Enter => {
                                 self.should_quit = true;
@@ -345,6 +432,12 @@ impl App {
                     if let Some(code) = new_translation {
                         state.translation = code;
                         state.load_chapter(&self.db);
+                    }
+                    if let Some((book, chapter, verse, text)) = save_note {
+                        notes::upsert(&mut self.notes, &book, chapter, verse, &text);
+                    }
+                    if let Some((book, chapter, verse)) = delete_note {
+                        notes::remove(&mut self.notes, &book, chapter, verse);
                     }
                     return;
                 }
@@ -489,6 +582,32 @@ impl App {
                         }
                         state.overlay = Some(OverlayKind::Highlights(hl_state));
                     }
+                    KeyCode::Char('n') => {
+                        let verse_num = if state.selected_verse > 0 {
+                            state.selected_verse
+                        } else {
+                            return;
+                        };
+                        let book = crate::bible::books::BOOKS[state.selected_book_idx]
+                            .name
+                            .to_string();
+                        let existing =
+                            notes::find(&self.notes, &book, state.selected_chapter, verse_num)
+                                .map(|n| n.text.as_str());
+                        state.overlay = Some(OverlayKind::NoteEditor(NoteEditorState::new(
+                            book,
+                            state.selected_chapter,
+                            verse_num,
+                            existing,
+                        )));
+                    }
+                    KeyCode::Char('N') => {
+                        let mut nl_state = NoteListState::default();
+                        if !self.notes.is_empty() {
+                            nl_state.list_state.select(Some(0));
+                        }
+                        state.overlay = Some(OverlayKind::NotesList(nl_state));
+                    }
                     KeyCode::Char('j') | KeyCode::Down => {
                         state.move_down();
                     }
@@ -538,6 +657,7 @@ impl App {
                     &self.highlight_map,
                     self.highlights_visible,
                     &self.highlights,
+                    &self.notes,
                 );
             }
         }
