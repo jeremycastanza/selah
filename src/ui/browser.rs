@@ -12,8 +12,10 @@ use crate::bible::books::BOOKS;
 use crate::bible::db;
 use crate::bible::types::Chapter;
 use crate::config::bookmarks::BookmarkEntry;
+use crate::config::highlights::{HighlightEntry, HighlightMap};
 use crate::config::session::SessionState;
 use crate::ui::bookmarks::{BookmarkListState, render_bookmarks};
+use crate::ui::highlight_list::{HighlightListState, render_highlight_list};
 use crate::ui::quit_confirm::render_quit_confirm;
 use crate::ui::search::{SearchState, render_search};
 use crate::ui::theme::Theme;
@@ -51,6 +53,7 @@ pub enum OverlayKind {
     Search(SearchState),
     Bookmarks(BookmarkListState),
     Translation(TranslationPickerState),
+    Highlights(HighlightListState),
     QuitConfirm,
 }
 
@@ -294,6 +297,7 @@ impl BrowserState {
             },
             theme,
             translation: self.translation.clone(),
+            highlights_visible: true,
         }
     }
 
@@ -389,6 +393,7 @@ pub fn hit_test(col: u16, row: u16, rect: Rect) -> bool {
     rect.contains(Position::new(col, row))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn render_browser(
     frame: &mut Frame,
     area: Rect,
@@ -396,6 +401,9 @@ pub fn render_browser(
     theme: &Theme,
     theme_label: &str,
     bookmarks: &[BookmarkEntry],
+    highlight_map: &HighlightMap,
+    highlights_visible: bool,
+    highlights: &[HighlightEntry],
 ) {
     let [browser_area, status_area] =
         Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).areas(area);
@@ -497,6 +505,17 @@ pub fn render_browser(
             verses
                 .iter()
                 .map(|v| {
+                    let highlight_bg = if highlights_visible {
+                        highlight_map
+                            .get(&(ch.book.clone(), ch.chapter, v.verse))
+                            .map(|color| theme.verse_highlight_bg(*color))
+                    } else {
+                        None
+                    };
+                    let text_style = match highlight_bg {
+                        Some(bg) => Style::default().fg(theme.text).bg(bg),
+                        None => Style::default().fg(theme.text),
+                    };
                     Line::from(vec![
                         Span::styled(
                             format!("{}  ", v.verse),
@@ -504,7 +523,7 @@ pub fn render_browser(
                                 .fg(theme.text_dim)
                                 .add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(v.text.as_str(), Style::default().fg(theme.text)),
+                        Span::styled(v.text.as_str(), text_style),
                     ])
                 })
                 .collect()
@@ -529,7 +548,8 @@ pub fn render_browser(
     let status_left = if let Some((ref msg, _)) = state.status_flash {
         msg.clone()
     } else {
-        "q: quit | /: search | b: bookmark | r: random | v: version | ?: splash".to_string()
+        "q: quit | /: search | b: bookmark | H: highlight | r: random | v: version | ?: splash"
+            .to_string()
     };
 
     let status_text = format!(" {} │ {} │ {}", status_left, state.translation, theme_label,);
@@ -545,6 +565,7 @@ pub fn render_browser(
             OverlayKind::Translation(t) => {
                 render_translation_picker(frame, area, t, &state.translation, theme)
             }
+            OverlayKind::Highlights(h) => render_highlight_list(frame, area, h, highlights, theme),
             OverlayKind::QuitConfirm => render_quit_confirm(frame, area, theme),
         }
     }

@@ -1,6 +1,7 @@
 pub mod banner;
 pub mod bookmarks;
 pub mod browser;
+pub mod highlight_list;
 pub mod quit_confirm;
 pub mod search;
 pub mod theme;

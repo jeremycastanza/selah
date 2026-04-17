@@ -10,10 +10,12 @@ use std::time::Instant;
 use crate::bible::TRANSLATIONS;
 use crate::bible::db;
 use crate::config::bookmarks::{self as bm, BookmarkEntry};
+use crate::config::highlights::{self as hl, HighlightEntry, HighlightMap};
 use crate::config::session::{self, SessionState};
 use crate::ui::banner::{self, BannerState};
 use crate::ui::bookmarks::BookmarkListState;
 use crate::ui::browser::{self, BrowserState, OverlayKind};
+use crate::ui::highlight_list::HighlightListState;
 use crate::ui::search::SearchState;
 use crate::ui::theme::{ThemeName, get_theme};
 use crate::ui::translation::TranslationPickerState;
@@ -29,6 +31,9 @@ pub struct App {
     pub db: Connection,
     pub should_quit: bool,
     pub bookmarks: Vec<BookmarkEntry>,
+    pub highlights: Vec<HighlightEntry>,
+    pub highlight_map: HighlightMap,
+    pub highlights_visible: bool,
     session: SessionState,
 }
 
@@ -44,12 +49,18 @@ impl App {
             AppMode::Banner(BannerState::new())
         };
 
+        let highlights = hl::load();
+        let highlight_map = hl::build_map(&highlights);
+
         Self {
             mode,
             theme_name,
             db,
             should_quit: false,
             bookmarks: bm::load(),
+            highlights,
+            highlight_map,
+            highlights_visible: session.highlights_visible,
             session,
         }
     }
@@ -115,6 +126,7 @@ impl App {
                     let mut close_overlay = false;
                     let mut jump_target: Option<(u32, u32, u32, Option<u32>)> = None;
                     let mut delete_bookmark: Option<usize> = None;
+                    let mut delete_highlight: Option<usize> = None;
                     let mut new_translation: Option<String> = None;
 
                     match state.overlay {
@@ -256,6 +268,52 @@ impl App {
                             KeyCode::Esc | KeyCode::Char('v') => close_overlay = true,
                             _ => {}
                         },
+                        Some(OverlayKind::Highlights(ref mut hl_state)) => match key {
+                            KeyCode::Char('j') | KeyCode::Down => {
+                                let max = self.highlights.len();
+                                if max > 0 {
+                                    let next = hl_state
+                                        .list_state
+                                        .selected()
+                                        .map(|i| (i + 1).min(max - 1))
+                                        .unwrap_or(0);
+                                    hl_state.list_state.select(Some(next));
+                                }
+                            }
+                            KeyCode::Char('k') | KeyCode::Up => {
+                                if let Some(i) = hl_state.list_state.selected()
+                                    && i > 0
+                                {
+                                    hl_state.list_state.select(Some(i - 1));
+                                }
+                            }
+                            KeyCode::Enter => {
+                                if let Some(i) = hl_state.list_state.selected()
+                                    && let Some(h) = self.highlights.get(i)
+                                {
+                                    let book_num = crate::bible::books::BOOKS
+                                        .iter()
+                                        .position(|bk| bk.name == h.book)
+                                        .map(|p| (p + 1) as u32)
+                                        .unwrap_or(1);
+                                    jump_target = Some((book_num, h.chapter, h.verse, None));
+                                    close_overlay = true;
+                                }
+                            }
+                            KeyCode::Char('d') => {
+                                if let Some(i) = hl_state.list_state.selected() {
+                                    delete_highlight = Some(i);
+                                    let new_len = self.highlights.len().saturating_sub(1);
+                                    if new_len == 0 {
+                                        hl_state.list_state.select(None);
+                                    } else {
+                                        hl_state.list_state.select(Some(i.min(new_len - 1)));
+                                    }
+                                }
+                            }
+                            KeyCode::Esc => close_overlay = true,
+                            _ => {}
+                        },
                         Some(OverlayKind::QuitConfirm) => match key {
                             KeyCode::Char('y') | KeyCode::Enter => {
                                 self.should_quit = true;
@@ -273,6 +331,13 @@ impl App {
                     }
                     if let Some(idx) = delete_bookmark {
                         bm::remove(&mut self.bookmarks, idx);
+                    }
+                    if let Some(idx) = delete_highlight
+                        && idx < self.highlights.len()
+                    {
+                        self.highlights.remove(idx);
+                        hl::save(&self.highlights);
+                        self.highlight_map = hl::build_map(&self.highlights);
                     }
                     if let Some((book_num, chapter, verse, verse_end)) = jump_target {
                         state.jump_to_verse(&self.db, book_num, chapter, verse, verse_end);
@@ -381,6 +446,49 @@ impl App {
                             state.status_flash = Some((flash, Instant::now()));
                         }
                     }
+                    KeyCode::Char('H') => {
+                        let verse_num = if state.selected_verse > 0 {
+                            state.selected_verse
+                        } else {
+                            return;
+                        };
+                        let book = crate::bible::books::BOOKS[state.selected_book_idx]
+                            .name
+                            .to_string();
+                        let result = hl::toggle(
+                            &mut self.highlights,
+                            &book,
+                            state.selected_chapter,
+                            verse_num,
+                        );
+                        self.highlight_map = hl::build_map(&self.highlights);
+                        let flash = match result {
+                            Some(color) => format!(
+                                "Highlighted {} {}:{} ({})",
+                                book,
+                                state.selected_chapter,
+                                verse_num,
+                                color.label()
+                            ),
+                            None => format!(
+                                "Removed highlight from {} {}:{}",
+                                book, state.selected_chapter, verse_num
+                            ),
+                        };
+                        state.status_flash = Some((flash, Instant::now()));
+                    }
+                    KeyCode::Char('g') => {
+                        self.highlights_visible = !self.highlights_visible;
+                        let label = if self.highlights_visible { "on" } else { "off" };
+                        state.status_flash = Some((format!("Highlights {label}"), Instant::now()));
+                    }
+                    KeyCode::Char('G') => {
+                        let mut hl_state = HighlightListState::default();
+                        if !self.highlights.is_empty() {
+                            hl_state.list_state.select(Some(0));
+                        }
+                        state.overlay = Some(OverlayKind::Highlights(hl_state));
+                    }
                     KeyCode::Char('j') | KeyCode::Down => {
                         state.move_down();
                     }
@@ -427,6 +535,9 @@ impl App {
                     &theme,
                     self.theme_name.label(),
                     &self.bookmarks,
+                    &self.highlight_map,
+                    self.highlights_visible,
+                    &self.highlights,
                 );
             }
         }
@@ -434,7 +545,9 @@ impl App {
 
     fn save_session(&self) {
         if let AppMode::Browser(ref state) = self.mode {
-            session::save(&state.to_session(self.theme_name));
+            let mut s = state.to_session(self.theme_name);
+            s.highlights_visible = self.highlights_visible;
+            session::save(&s);
         } else {
             let state = SessionState {
                 theme: self.theme_name,
