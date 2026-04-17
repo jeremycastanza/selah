@@ -14,6 +14,7 @@ use crate::bible::types::Chapter;
 use crate::config::bookmarks::BookmarkEntry;
 use crate::config::session::SessionState;
 use crate::ui::bookmarks::{BookmarkListState, render_bookmarks};
+use crate::ui::quit_confirm::render_quit_confirm;
 use crate::ui::search::{SearchState, render_search};
 use crate::ui::theme::Theme;
 use crate::ui::translation::{TranslationPickerState, render_translation_picker};
@@ -50,6 +51,7 @@ pub enum OverlayKind {
     Search(SearchState),
     Bookmarks(BookmarkListState),
     Translation(TranslationPickerState),
+    QuitConfirm,
 }
 
 pub struct BrowserState {
@@ -375,7 +377,6 @@ pub fn render_browser(
     frame: &mut Frame,
     area: Rect,
     state: &mut BrowserState,
-    quit_pending: bool,
     theme: &Theme,
     theme_label: &str,
     bookmarks: &[BookmarkEntry],
@@ -491,8 +492,6 @@ pub fn render_browser(
 
     let status_left = if let Some((ref msg, _)) = state.status_flash {
         msg.clone()
-    } else if quit_pending {
-        "press q again to quit".to_string()
     } else {
         "q: quit | t: theme | /: search | b: bookmark | r: random | v: version | ?: splash"
             .to_string()
@@ -511,6 +510,7 @@ pub fn render_browser(
             OverlayKind::Translation(t) => {
                 render_translation_picker(frame, area, t, &state.translation, theme)
             }
+            OverlayKind::QuitConfirm => render_quit_confirm(frame, area, theme),
         }
     }
 }

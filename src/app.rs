@@ -2,7 +2,7 @@ use std::io;
 use std::time::Duration;
 
 use ratatui::Frame;
-use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind};
+use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use rusqlite::Connection;
 
 use std::time::Instant;
@@ -27,7 +27,6 @@ pub struct App {
     pub mode: AppMode,
     pub theme_name: ThemeName,
     pub db: Connection,
-    pub quit_pending: bool,
     pub should_quit: bool,
     pub bookmarks: Vec<BookmarkEntry>,
     session: SessionState,
@@ -49,7 +48,6 @@ impl App {
             mode,
             theme_name,
             db,
-            quit_pending: false,
             should_quit: false,
             bookmarks: bm::load(),
             session,
@@ -71,7 +69,13 @@ impl App {
             if event::poll(tick_rate)? {
                 match event::read()? {
                     Event::Key(key) if key.kind == KeyEventKind::Press => {
-                        self.handle_key(key.code);
+                        if key.code == KeyCode::Char('c')
+                            && key.modifiers.contains(KeyModifiers::CONTROL)
+                        {
+                            self.should_quit = true;
+                        } else {
+                            self.handle_key(key.code);
+                        }
                     }
                     Event::Mouse(mouse) => {
                         self.handle_mouse(mouse);
@@ -252,6 +256,15 @@ impl App {
                             KeyCode::Esc | KeyCode::Char('v') => close_overlay = true,
                             _ => {}
                         },
+                        Some(OverlayKind::QuitConfirm) => match key {
+                            KeyCode::Char('y') | KeyCode::Enter => {
+                                self.should_quit = true;
+                            }
+                            KeyCode::Char('n') | KeyCode::Esc | KeyCode::Char('q') => {
+                                close_overlay = true;
+                            }
+                            _ => {}
+                        },
                         None => {}
                     }
 
@@ -273,19 +286,13 @@ impl App {
 
                 match key {
                     KeyCode::Char('q') => {
-                        if self.quit_pending {
-                            self.should_quit = true;
-                        } else {
-                            self.quit_pending = true;
-                        }
-                        return;
+                        state.overlay = Some(OverlayKind::QuitConfirm);
                     }
                     KeyCode::Char('t') => {
                         self.theme_name = self.theme_name.next();
                     }
                     KeyCode::Char('?') => {
                         self.mode = AppMode::Banner(BannerState::new());
-                        return;
                     }
                     KeyCode::Char('/') => {
                         state.overlay = Some(OverlayKind::Search(SearchState::default()));
@@ -364,7 +371,6 @@ impl App {
                     }
                     _ => {}
                 }
-                self.quit_pending = false;
             }
         }
     }
@@ -375,7 +381,6 @@ impl App {
                 return;
             }
             state.handle_mouse(mouse, &self.db);
-            self.quit_pending = false;
         }
     }
 
@@ -391,7 +396,6 @@ impl App {
                     frame,
                     frame.area(),
                     state,
-                    self.quit_pending,
                     &theme,
                     self.theme_name.label(),
                     &self.bookmarks,
