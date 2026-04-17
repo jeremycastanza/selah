@@ -72,6 +72,7 @@ pub struct BrowserState {
     pub scripture_rect: Rect,
     pub status_flash: Option<(String, Instant)>,
     pub mark_start: Option<u32>,
+    pub selected_verse_end: Option<u32>,
 }
 
 impl BrowserState {
@@ -132,6 +133,7 @@ impl BrowserState {
             scripture_rect: Rect::default(),
             status_flash: None,
             mark_start: None,
+            selected_verse_end: None,
         }
     }
 
@@ -158,11 +160,13 @@ impl BrowserState {
                 Some(i) if i > 0 => {
                     self.verse_list.select(Some(i - 1));
                     self.selected_verse = i as u32;
+                    self.selected_verse_end = None;
                     self.scripture_scroll = 0;
                 }
                 Some(0) => {
                     self.verse_list.select(None);
                     self.selected_verse = 0;
+                    self.selected_verse_end = None;
                     self.scripture_scroll = 0;
                 }
                 None => {}
@@ -204,11 +208,13 @@ impl BrowserState {
                     Some(i) if i < max.saturating_sub(1) => {
                         self.verse_list.select(Some(i + 1));
                         self.selected_verse = (i + 2) as u32;
+                        self.selected_verse_end = None;
                         self.scripture_scroll = 0;
                     }
                     None if max > 0 => {
                         self.verse_list.select(Some(0));
                         self.selected_verse = 1;
+                        self.selected_verse_end = None;
                         self.scripture_scroll = 0;
                     }
                     _ => {}
@@ -252,7 +258,14 @@ impl BrowserState {
         self.scripture_scroll = 0;
     }
 
-    pub fn jump_to_verse(&mut self, conn: &Connection, book_num: u32, chapter: u32, verse: u32) {
+    pub fn jump_to_verse(
+        &mut self,
+        conn: &Connection,
+        book_num: u32,
+        chapter: u32,
+        verse: u32,
+        verse_end: Option<u32>,
+    ) {
         self.selected_book_idx = book_num.saturating_sub(1) as usize;
         self.selected_chapter = chapter;
         self.book_list.select(Some(self.selected_book_idx));
@@ -264,6 +277,7 @@ impl BrowserState {
                 .select(Some(verse.saturating_sub(1) as usize));
             self.selected_verse = verse;
         }
+        self.selected_verse_end = verse_end;
         self.active_panel = Panel::Scripture;
     }
 
@@ -470,7 +484,12 @@ pub fn render_browser(
         .current_chapter
         .as_ref()
         .map(|ch| {
-            let verses = if let Some(idx) = state.verse_list.selected() {
+            let verses: &[_] = if let (Some(start), Some(end)) =
+                (state.verse_list.selected(), state.selected_verse_end)
+            {
+                let end_idx = (end as usize).min(ch.verses.len());
+                &ch.verses[start..end_idx]
+            } else if let Some(idx) = state.verse_list.selected() {
                 ch.verses.get(idx).map(std::slice::from_ref).unwrap_or(&[])
             } else {
                 &ch.verses
@@ -510,8 +529,7 @@ pub fn render_browser(
     let status_left = if let Some((ref msg, _)) = state.status_flash {
         msg.clone()
     } else {
-        "q: quit | /: search | b: bookmark | m: mark | r: random | v: version | ?: splash"
-            .to_string()
+        "q: quit | /: search | b: bookmark | r: random | v: version | ?: splash".to_string()
     };
 
     let status_text = format!(" {} │ {} │ {}", status_left, state.translation, theme_label,);
