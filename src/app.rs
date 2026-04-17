@@ -113,7 +113,7 @@ impl App {
                 if state.overlay.is_some() {
                     let translation = state.translation.clone();
                     let mut close_overlay = false;
-                    let mut jump_target: Option<(u32, u32, u32)> = None;
+                    let mut jump_target: Option<(u32, u32, u32, Option<u32>)> = None;
                     let mut delete_bookmark: Option<usize> = None;
                     let mut new_translation: Option<String> = None;
 
@@ -172,7 +172,7 @@ impl App {
                                     && let Some(result) = search.results.get(i)
                                 {
                                     jump_target =
-                                        Some((result.book_num, result.chapter, result.verse));
+                                        Some((result.book_num, result.chapter, result.verse, None));
                                     close_overlay = true;
                                 }
                             }
@@ -208,7 +208,7 @@ impl App {
                                         .position(|bk| bk.name == b.book)
                                         .map(|p| (p + 1) as u32)
                                         .unwrap_or(1);
-                                    jump_target = Some((book_num, b.chapter, b.verse));
+                                    jump_target = Some((book_num, b.chapter, b.verse, b.verse_end));
                                     close_overlay = true;
                                 }
                             }
@@ -274,8 +274,8 @@ impl App {
                     if let Some(idx) = delete_bookmark {
                         bm::remove(&mut self.bookmarks, idx);
                     }
-                    if let Some((book_num, chapter, verse)) = jump_target {
-                        state.jump_to_verse(&self.db, book_num, chapter, verse);
+                    if let Some((book_num, chapter, verse, verse_end)) = jump_target {
+                        state.jump_to_verse(&self.db, book_num, chapter, verse, verse_end);
                     }
                     if let Some(code) = new_translation {
                         state.translation = code;
@@ -303,28 +303,51 @@ impl App {
                         } else {
                             1
                         };
-                        let snippet = state
-                            .current_chapter
-                            .as_ref()
-                            .and_then(|ch| ch.verses.get((verse_num - 1) as usize))
-                            .map(|v| v.text.chars().take(60).collect::<String>());
-                        let book = crate::bible::books::BOOKS[state.selected_book_idx]
-                            .name
-                            .to_string();
-                        let flash = format!(
-                            "Bookmarked {} {}:{}",
-                            book, state.selected_chapter, verse_num
-                        );
-                        let entry = BookmarkEntry {
-                            book,
-                            chapter: state.selected_chapter,
-                            verse: verse_num,
-                            snippet,
-                            note: None,
-                            created_at: bm::now_unix(),
-                        };
-                        bm::add(&mut self.bookmarks, entry);
-                        state.status_flash = Some((flash, Instant::now()));
+                        if let Some(mark_start) = state.mark_start {
+                            let (start, end) = if mark_start <= verse_num {
+                                (mark_start, verse_num)
+                            } else {
+                                (verse_num, mark_start)
+                            };
+                            let snippet = state
+                                .current_chapter
+                                .as_ref()
+                                .and_then(|ch| ch.verses.get((start - 1) as usize))
+                                .map(|v| v.text.chars().take(60).collect::<String>());
+                            let book = crate::bible::books::BOOKS[state.selected_book_idx]
+                                .name
+                                .to_string();
+                            let verse_end = if start == end { None } else { Some(end) };
+                            let flash = match verse_end {
+                                Some(e) => format!(
+                                    "Bookmarked {} {}:{}-{}",
+                                    book, state.selected_chapter, start, e
+                                ),
+                                None => format!(
+                                    "Bookmarked {} {}:{}",
+                                    book, state.selected_chapter, start
+                                ),
+                            };
+                            let entry = BookmarkEntry {
+                                book,
+                                chapter: state.selected_chapter,
+                                verse: start,
+                                verse_end,
+                                snippet,
+                                note: None,
+                                created_at: bm::now_unix(),
+                            };
+                            bm::add(&mut self.bookmarks, entry);
+                            state.mark_start = None;
+                            state.status_flash = Some((flash, Instant::now()));
+                        } else {
+                            state.mark_start = Some(verse_num);
+                            let flash = format!(
+                                "Mark set at verse {} — press b on another verse to create range",
+                                verse_num
+                            );
+                            state.status_flash = Some((flash, Instant::now()));
+                        }
                     }
                     KeyCode::Char('B') => {
                         let mut bmark_state = BookmarkListState::default();
@@ -353,6 +376,7 @@ impl App {
                                 verse.book_num,
                                 verse.chapter,
                                 verse.verse,
+                                None,
                             );
                             state.status_flash = Some((flash, Instant::now()));
                         }
@@ -368,6 +392,10 @@ impl App {
                     }
                     KeyCode::Char('l') | KeyCode::Right | KeyCode::Enter => {
                         state.focus_next(&self.db);
+                    }
+                    KeyCode::Esc if state.mark_start.is_some() => {
+                        state.mark_start = None;
+                        state.status_flash = Some(("Mark cancelled".to_string(), Instant::now()));
                     }
                     _ => {}
                 }

@@ -71,6 +71,7 @@ pub struct BrowserState {
     pub verses_rect: Rect,
     pub scripture_rect: Rect,
     pub status_flash: Option<(String, Instant)>,
+    pub mark_start: Option<u32>,
 }
 
 impl BrowserState {
@@ -130,6 +131,7 @@ impl BrowserState {
             verses_rect: Rect::default(),
             scripture_rect: Rect::default(),
             status_flash: None,
+            mark_start: None,
         }
     }
 
@@ -434,7 +436,22 @@ pub fn render_browser(
         .map(|ch| {
             ch.verses
                 .iter()
-                .map(|v| ListItem::new(format!("{}", v.verse)))
+                .map(|v| {
+                    let is_mark_start = state.mark_start == Some(v.verse);
+                    if is_mark_start {
+                        ListItem::new(Line::from(vec![
+                            Span::styled(
+                                "> ",
+                                Style::default()
+                                    .fg(theme.accent)
+                                    .add_modifier(Modifier::BOLD),
+                            ),
+                            Span::styled(format!("{}", v.verse), Style::default().fg(theme.accent)),
+                        ]))
+                    } else {
+                        ListItem::new(format!("{}", v.verse))
+                    }
+                })
                 .collect()
         })
         .unwrap_or_default();
@@ -493,7 +510,7 @@ pub fn render_browser(
     let status_left = if let Some((ref msg, _)) = state.status_flash {
         msg.clone()
     } else {
-        "q: quit | t: theme | /: search | b: bookmark | r: random | v: version | ?: splash"
+        "q: quit | /: search | b: bookmark | m: mark | r: random | v: version | ?: splash"
             .to_string()
     };
 

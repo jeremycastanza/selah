@@ -59,9 +59,13 @@ pub fn render_bookmarks(
             } else {
                 snippet.to_string()
             };
+            let ref_str = match b.verse_end {
+                Some(end) => format!("{} {}:{}-{} — ", b.book, b.chapter, b.verse, end),
+                None => format!("{} {}:{} — ", b.book, b.chapter, b.verse),
+            };
             ListItem::new(Line::from(vec![
                 Span::styled(
-                    format!("{} {}:{} — ", b.book, b.chapter, b.verse),
+                    ref_str,
                     Style::default()
                         .fg(theme.text_dim)
                         .add_modifier(Modifier::BOLD),
