@@ -117,6 +117,25 @@ pub fn get_theme(name: ThemeName) -> Theme {
     }
 }
 
+impl Theme {
+    pub fn verse_highlight_bg(&self, color: crate::config::highlights::HighlightColor) -> Color {
+        use crate::config::highlights::HighlightColor;
+        let is_light = matches!(self.bg, Color::Rgb(r, _, _) if r > 200);
+        match (color, is_light) {
+            (HighlightColor::Yellow, false) => Color::Rgb(120, 110, 30),
+            (HighlightColor::Green, false) => Color::Rgb(30, 100, 40),
+            (HighlightColor::Blue, false) => Color::Rgb(30, 50, 110),
+            (HighlightColor::Pink, false) => Color::Rgb(110, 30, 70),
+            (HighlightColor::Orange, false) => Color::Rgb(120, 70, 20),
+            (HighlightColor::Yellow, true) => Color::Rgb(255, 250, 180),
+            (HighlightColor::Green, true) => Color::Rgb(200, 240, 200),
+            (HighlightColor::Blue, true) => Color::Rgb(200, 215, 255),
+            (HighlightColor::Pink, true) => Color::Rgb(255, 200, 220),
+            (HighlightColor::Orange, true) => Color::Rgb(255, 220, 180),
+        }
+    }
+}
+
 pub fn interpolate_color(from: Color, to: Color, t: f32) -> Color {
     let t = t.clamp(0.0, 1.0);
     match (from, to) {

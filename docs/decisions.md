@@ -194,3 +194,159 @@ Selah embeds an SQLite database compiled directly into the binary using `rusqlit
 1. **Flat JSON + `include_str!()`** (current `christ` approach for KJV) — Fast to implement, but no efficient search and multi-version support bloats binary proportionally with no query capability
 2. **Runtime API (bolls.life)** (current `christ` approach for non-KJV) — Rejected; violates the offline-first requirement
 3. **SWORD Project** — Rejected; C++ library with no Rust bindings, high integration cost
+
+---
+
+## ADR-007: Notes Independent of Bookmarks
+
+_Date: 2026-04-23_
+_Status: Accepted_
+
+### Context
+
+v0.2.0 adds per-verse notes. `BookmarkEntry` already carries an unused `note: Option<String>` field. Options: reuse that field (notes live on bookmarks) or create a separate `notes.json` with its own entry type.
+
+### Decision
+
+Notes use a separate `notes.json` file and a dedicated `NoteEntry` struct. The existing `BookmarkEntry.note` field remains available for brief bookmark labels but is not the primary notes storage.
+
+### Consequences
+
+**Positive:**
+- Users can annotate a verse without bookmarking it
+- Notes and bookmarks have independent lifecycles — deleting one does not affect the other
+- Separate list overlays (`B` for bookmarks, `N` for notes) stay focused
+- Simpler per-domain CRUD functions
+
+**Negative:**
+- Two JSON files instead of one; a verse with both a bookmark and a note has data in two places
+- Slight duplication of `(book, chapter, verse)` identity across files
+
+### Alternatives Considered
+
+1. **Reuse `BookmarkEntry.note`** — Rejected; forces users to bookmark before annotating, and blurs the UX between "saved location" and "study insight"
+
+---
+
+## ADR-008: JSON Files for All User Data
+
+_Date: 2026-04-23_
+_Status: Accepted_
+
+### Context
+
+v0.2.0 introduces highlights and notes as new persistent data. Bible data already lives in a bundled SQLite database (ADR-006). A decision is needed on whether to extend that database with writable tables or continue the JSON-file pattern used by bookmarks and session state.
+
+### Decision
+
+Highlights and notes follow the existing JSON-file pattern (`highlights.json`, `notes.json`) in the platform data directory via `directories::ProjectDirs`. The bundled SQLite database remains read-only Bible content.
+
+### Consequences
+
+**Positive:**
+- Consistency with the existing bookmarks/session persistence pattern
+- Human-readable files that users can inspect, back up, or sync manually
+- No schema migrations — `#[serde(default)]` handles backward-compatible field additions
+- O(1) lookup via `HashMap` built at load time for highlights; acceptable O(n) scan for notes at expected scale (< 10k entries)
+
+**Negative:**
+- Full file rewrite on every mutation — acceptable at current scale, not at 100k+ entries
+- No transactional guarantees across files (e.g., deleting a verse's bookmark and note is two separate writes)
+
+### Alternatives Considered
+
+1. **Writable SQLite tables alongside the bundled Bible data** — Rejected; mixing read-only bundled data with user-writable data in the same file complicates distribution and upgrade flows
+2. **Separate user SQLite database** — Rejected; overkill for the current data scale and adds a migration system requirement
+
+---
+
+## ADR-009: Multi-Line Note Editor with Soft Word Wrap
+
+_Date: 2026-04-23_
+_Status: Accepted_
+
+### Context
+
+Study notes need more than a single line. Options: reuse the search box (single line), build a full multi-line text editor, or embed an external editor via `$EDITOR`.
+
+### Decision
+
+A custom multi-line text editor overlay is implemented in `src/ui/notes.rs`. `Enter` inserts a newline; `Ctrl+S` saves; `Esc` cancels. The editor tracks `(cursor_row, cursor_col)` against a `Vec<String>` buffer. Long lines soft-wrap visually at the editor width — no horizontal scroll, no hard-wrap inserted into the buffer. Up/Down arrows navigate visual (wrapped) lines, not logical lines. Vertical scroll activates when content exceeds the visible area.
+
+### Consequences
+
+**Positive:**
+- Paragraph-length study reflections possible without leaving the TUI
+- Fully offline, no `$EDITOR` shell-out
+- Soft wrap preserves original logical lines on save — no spurious line breaks in the stored text
+- Visual-line cursor navigation matches user expectation in wrapped editors
+
+**Negative:**
+- Custom editor logic: cursor math, wrap math, scroll offset, line merging on backspace at boundaries
+- Width-dependent cursor state requires stashing the last rendered width on `NoteEditorState` so key handlers can compute visual-line movement
+
+### Alternatives Considered
+
+1. **Single-line notes** — Rejected; too limiting for study use
+2. **Shell out to `$EDITOR`** — Rejected; breaks the offline-first single-binary UX and has no clean path in a TUI event loop
+3. **Hard-wrap at editor width (insert real newlines)** — Rejected; corrupts the saved text with presentational line breaks tied to one terminal width
+
+---
+
+## ADR-010: Highlight Visibility Toggle
+
+_Date: 2026-04-23_
+_Status: Accepted_
+
+### Context
+
+Highlighted verse backgrounds can clutter the reading view when many verses in a chapter are highlighted. Users may want a clean view without deleting their highlights.
+
+### Decision
+
+A global visibility toggle (`g`) hides all highlight backgrounds without mutating the highlight data. The state (`highlights_visible: bool`) persists in `SessionState` via `#[serde(default = "default_true")]`.
+
+### Consequences
+
+**Positive:**
+- Users get a clean reading view on demand
+- No destructive operation required to declutter
+- State persists across restarts
+
+**Negative:**
+- One more piece of session state to maintain
+
+### Alternatives Considered
+
+1. **Per-color visibility toggles** — Rejected; over-engineered for current needs
+2. **Delete and re-add highlights** — Rejected; destructive and loses color choices
+
+---
+
+## ADR-011: Browse Overlays for Highlights and Notes
+
+_Date: 2026-04-23_
+_Status: Accepted_
+
+### Context
+
+As highlights and notes accumulate, users need a way to find and revisit annotated verses without scrolling every chapter. The Bookmarks overlay already provides this pattern.
+
+### Decision
+
+Two new overlays mirror the Bookmarks overlay: Highlights List (`G`) and Notes List (`N`). Same centered-modal style, same keybindings (`j`/`k` navigate, `Enter` jumps, `d` deletes, `Esc` closes). Entries show the verse reference plus metadata (color label for highlights, first-line preview for notes).
+
+### Consequences
+
+**Positive:**
+- Consistent UX across all three browse overlays
+- Fast navigation to any annotated verse
+- Deletion from the list keeps Scripture panel in sync via the same data mutations used elsewhere
+
+**Negative:**
+- Three near-identical overlay implementations — some duplicated list-rendering logic. Acceptable at current scale; candidate for a shared abstraction if a fourth overlay of this shape is added.
+
+### Alternatives Considered
+
+1. **Single unified "annotations" overlay** — Rejected; mixing highlights and notes in one list obscures type-specific actions and visuals
+2. **Inline chapter-level jump markers only** — Rejected; doesn't scale across books

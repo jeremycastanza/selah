@@ -14,6 +14,12 @@ pub struct SessionState {
     pub active_panel: u8,
     pub theme: ThemeName,
     pub translation: String,
+    #[serde(default = "default_true")]
+    pub highlights_visible: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for SessionState {
@@ -25,6 +31,7 @@ impl Default for SessionState {
             active_panel: 0,
             theme: ThemeName::default(),
             translation: "KJV".to_string(),
+            highlights_visible: true,
         }
     }
 }
@@ -70,6 +77,7 @@ mod tests {
             active_panel: 2,
             theme: ThemeName::Parchment,
             translation: "KJV".to_string(),
+            highlights_visible: true,
         };
         let json = serde_json::to_string(&state).unwrap();
         let deserialized: SessionState = serde_json::from_str(&json).unwrap();

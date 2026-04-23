@@ -4,19 +4,19 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, List, ListItem, ListState};
 
-use crate::config::bookmarks::BookmarkEntry;
+use crate::config::highlights::HighlightEntry;
 use crate::ui::theme::Theme;
 
 #[derive(Default)]
-pub struct BookmarkListState {
+pub struct HighlightListState {
     pub list_state: ListState,
 }
 
-pub fn render_bookmarks(
+pub fn render_highlight_list(
     frame: &mut Frame,
     area: Rect,
-    state: &mut BookmarkListState,
-    bookmarks: &[BookmarkEntry],
+    state: &mut HighlightListState,
+    highlights: &[HighlightEntry],
     theme: &Theme,
 ) {
     let [_, vert_center, _] = Layout::vertical([
@@ -35,34 +35,24 @@ pub fn render_bookmarks(
 
     frame.render_widget(Clear, modal_area);
 
-    let hint = if bookmarks.is_empty() {
-        " No bookmarks — press b to add one"
+    let hint = if highlights.is_empty() {
+        " No highlights — press H on a verse to add one"
     } else {
         " j/k: navigate  Enter: jump  d: delete  Esc: close"
     };
 
     let outer_block = Block::bordered()
-        .title(" Bookmarks ")
+        .title(" Highlights ")
         .title_bottom(hint)
         .border_style(Style::default().fg(theme.accent))
         .style(Style::default().bg(theme.surface));
     let inner_area = outer_block.inner(modal_area);
     frame.render_widget(outer_block, modal_area);
 
-    let items: Vec<ListItem> = bookmarks
+    let items: Vec<ListItem> = highlights
         .iter()
-        .map(|b| {
-            let snippet = b.snippet.as_deref().unwrap_or("");
-            let preview = if snippet.chars().count() > 40 {
-                let truncated: String = snippet.chars().take(40).collect();
-                format!("{truncated}…")
-            } else {
-                snippet.to_string()
-            };
-            let ref_str = match b.verse_end {
-                Some(end) => format!("{} {}:{}-{} — ", b.book, b.chapter, b.verse, end),
-                None => format!("{} {}:{} — ", b.book, b.chapter, b.verse),
-            };
+        .map(|h| {
+            let ref_str = format!("{} {}:{}", h.book, h.chapter, h.verse);
             ListItem::new(Line::from(vec![
                 Span::styled(
                     ref_str,
@@ -70,7 +60,10 @@ pub fn render_bookmarks(
                         .fg(theme.text_dim)
                         .add_modifier(Modifier::BOLD),
                 ),
-                Span::styled(preview, Style::default().fg(theme.text)),
+                Span::styled(
+                    format!(" — {}", h.color.label()),
+                    Style::default().fg(theme.text),
+                ),
             ]))
         })
         .collect();

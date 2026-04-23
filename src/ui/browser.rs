@@ -12,8 +12,14 @@ use crate::bible::books::BOOKS;
 use crate::bible::db;
 use crate::bible::types::Chapter;
 use crate::config::bookmarks::BookmarkEntry;
+use crate::config::highlights::{HighlightEntry, HighlightMap};
+use crate::config::notes::NoteEntry;
 use crate::config::session::SessionState;
 use crate::ui::bookmarks::{BookmarkListState, render_bookmarks};
+use crate::ui::highlight_list::{HighlightListState, render_highlight_list};
+use crate::ui::note_list::{NoteListState, render_note_list};
+use crate::ui::notes::{NoteEditorState, render_note_editor};
+use crate::ui::quit_confirm::render_quit_confirm;
 use crate::ui::search::{SearchState, render_search};
 use crate::ui::theme::Theme;
 use crate::ui::translation::{TranslationPickerState, render_translation_picker};
@@ -50,6 +56,10 @@ pub enum OverlayKind {
     Search(SearchState),
     Bookmarks(BookmarkListState),
     Translation(TranslationPickerState),
+    Highlights(HighlightListState),
+    NoteEditor(NoteEditorState),
+    NotesList(NoteListState),
+    QuitConfirm,
 }
 
 pub struct BrowserState {
@@ -69,6 +79,8 @@ pub struct BrowserState {
     pub verses_rect: Rect,
     pub scripture_rect: Rect,
     pub status_flash: Option<(String, Instant)>,
+    pub mark_start: Option<u32>,
+    pub selected_verse_end: Option<u32>,
 }
 
 impl BrowserState {
@@ -128,6 +140,8 @@ impl BrowserState {
             verses_rect: Rect::default(),
             scripture_rect: Rect::default(),
             status_flash: None,
+            mark_start: None,
+            selected_verse_end: None,
         }
     }
 
@@ -154,11 +168,13 @@ impl BrowserState {
                 Some(i) if i > 0 => {
                     self.verse_list.select(Some(i - 1));
                     self.selected_verse = i as u32;
+                    self.selected_verse_end = None;
                     self.scripture_scroll = 0;
                 }
                 Some(0) => {
                     self.verse_list.select(None);
                     self.selected_verse = 0;
+                    self.selected_verse_end = None;
                     self.scripture_scroll = 0;
                 }
                 None => {}
@@ -200,11 +216,13 @@ impl BrowserState {
                     Some(i) if i < max.saturating_sub(1) => {
                         self.verse_list.select(Some(i + 1));
                         self.selected_verse = (i + 2) as u32;
+                        self.selected_verse_end = None;
                         self.scripture_scroll = 0;
                     }
                     None if max > 0 => {
                         self.verse_list.select(Some(0));
                         self.selected_verse = 1;
+                        self.selected_verse_end = None;
                         self.scripture_scroll = 0;
                     }
                     _ => {}
@@ -248,7 +266,14 @@ impl BrowserState {
         self.scripture_scroll = 0;
     }
 
-    pub fn jump_to_verse(&mut self, conn: &Connection, book_num: u32, chapter: u32, verse: u32) {
+    pub fn jump_to_verse(
+        &mut self,
+        conn: &Connection,
+        book_num: u32,
+        chapter: u32,
+        verse: u32,
+        verse_end: Option<u32>,
+    ) {
         self.selected_book_idx = book_num.saturating_sub(1) as usize;
         self.selected_chapter = chapter;
         self.book_list.select(Some(self.selected_book_idx));
@@ -260,6 +285,7 @@ impl BrowserState {
                 .select(Some(verse.saturating_sub(1) as usize));
             self.selected_verse = verse;
         }
+        self.selected_verse_end = verse_end;
         self.active_panel = Panel::Scripture;
     }
 
@@ -276,6 +302,7 @@ impl BrowserState {
             },
             theme,
             translation: self.translation.clone(),
+            highlights_visible: true,
         }
     }
 
@@ -371,14 +398,18 @@ pub fn hit_test(col: u16, row: u16, rect: Rect) -> bool {
     rect.contains(Position::new(col, row))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn render_browser(
     frame: &mut Frame,
     area: Rect,
     state: &mut BrowserState,
-    quit_pending: bool,
     theme: &Theme,
     theme_label: &str,
     bookmarks: &[BookmarkEntry],
+    highlight_map: &HighlightMap,
+    highlights_visible: bool,
+    highlights: &[HighlightEntry],
+    notes: &[NoteEntry],
 ) {
     let [browser_area, status_area] =
         Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).areas(area);
@@ -433,7 +464,22 @@ pub fn render_browser(
         .map(|ch| {
             ch.verses
                 .iter()
-                .map(|v| ListItem::new(format!("{}", v.verse)))
+                .map(|v| {
+                    let is_mark_start = state.mark_start == Some(v.verse);
+                    if is_mark_start {
+                        ListItem::new(Line::from(vec![
+                            Span::styled(
+                                "> ",
+                                Style::default()
+                                    .fg(theme.accent)
+                                    .add_modifier(Modifier::BOLD),
+                            ),
+                            Span::styled(format!("{}", v.verse), Style::default().fg(theme.accent)),
+                        ]))
+                    } else {
+                        ListItem::new(format!("{}", v.verse))
+                    }
+                })
                 .collect()
         })
         .unwrap_or_default();
@@ -452,7 +498,12 @@ pub fn render_browser(
         .current_chapter
         .as_ref()
         .map(|ch| {
-            let verses = if let Some(idx) = state.verse_list.selected() {
+            let verses: &[_] = if let (Some(start), Some(end)) =
+                (state.verse_list.selected(), state.selected_verse_end)
+            {
+                let end_idx = (end as usize).min(ch.verses.len());
+                &ch.verses[start..end_idx]
+            } else if let Some(idx) = state.verse_list.selected() {
                 ch.verses.get(idx).map(std::slice::from_ref).unwrap_or(&[])
             } else {
                 &ch.verses
@@ -460,14 +511,33 @@ pub fn render_browser(
             verses
                 .iter()
                 .map(|v| {
+                    let highlight_bg = if highlights_visible {
+                        highlight_map
+                            .get(&(ch.book.clone(), ch.chapter, v.verse))
+                            .map(|color| theme.verse_highlight_bg(*color))
+                    } else {
+                        None
+                    };
+                    let text_style = match highlight_bg {
+                        Some(bg) => Style::default().fg(theme.text).bg(bg),
+                        None => Style::default().fg(theme.text),
+                    };
+                    let has_note = notes.iter().any(|n| {
+                        n.book == ch.book && n.chapter == ch.chapter && n.verse == v.verse
+                    });
+                    let verse_label = if has_note {
+                        format!("{}* ", v.verse)
+                    } else {
+                        format!("{}  ", v.verse)
+                    };
                     Line::from(vec![
                         Span::styled(
-                            format!("{}  ", v.verse),
+                            verse_label,
                             Style::default()
                                 .fg(theme.text_dim)
                                 .add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(v.text.as_str(), Style::default().fg(theme.text)),
+                        Span::styled(v.text.as_str(), text_style),
                     ])
                 })
                 .collect()
@@ -491,10 +561,8 @@ pub fn render_browser(
 
     let status_left = if let Some((ref msg, _)) = state.status_flash {
         msg.clone()
-    } else if quit_pending {
-        "press q again to quit".to_string()
     } else {
-        "q: quit | t: theme | /: search | b: bookmark | r: random | v: version | ?: splash"
+        "q: quit | /: search | b: bookmark | H: highlight | n: note | r: random | ?: splash"
             .to_string()
     };
 
@@ -511,6 +579,10 @@ pub fn render_browser(
             OverlayKind::Translation(t) => {
                 render_translation_picker(frame, area, t, &state.translation, theme)
             }
+            OverlayKind::Highlights(h) => render_highlight_list(frame, area, h, highlights, theme),
+            OverlayKind::NoteEditor(n) => render_note_editor(frame, area, n, theme),
+            OverlayKind::NotesList(n) => render_note_list(frame, area, n, notes, theme),
+            OverlayKind::QuitConfirm => render_quit_confirm(frame, area, theme),
         }
     }
 }

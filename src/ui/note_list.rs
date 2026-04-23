@@ -4,19 +4,19 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, List, ListItem, ListState};
 
-use crate::config::bookmarks::BookmarkEntry;
+use crate::config::notes::NoteEntry;
 use crate::ui::theme::Theme;
 
 #[derive(Default)]
-pub struct BookmarkListState {
+pub struct NoteListState {
     pub list_state: ListState,
 }
 
-pub fn render_bookmarks(
+pub fn render_note_list(
     frame: &mut Frame,
     area: Rect,
-    state: &mut BookmarkListState,
-    bookmarks: &[BookmarkEntry],
+    state: &mut NoteListState,
+    notes: &[NoteEntry],
     theme: &Theme,
 ) {
     let [_, vert_center, _] = Layout::vertical([
@@ -35,34 +35,31 @@ pub fn render_bookmarks(
 
     frame.render_widget(Clear, modal_area);
 
-    let hint = if bookmarks.is_empty() {
-        " No bookmarks — press b to add one"
+    let hint = if notes.is_empty() {
+        " No notes — press n on a verse to add one"
     } else {
         " j/k: navigate  Enter: jump  d: delete  Esc: close"
     };
 
     let outer_block = Block::bordered()
-        .title(" Bookmarks ")
+        .title(" Notes ")
         .title_bottom(hint)
         .border_style(Style::default().fg(theme.accent))
         .style(Style::default().bg(theme.surface));
     let inner_area = outer_block.inner(modal_area);
     frame.render_widget(outer_block, modal_area);
 
-    let items: Vec<ListItem> = bookmarks
+    let items: Vec<ListItem> = notes
         .iter()
-        .map(|b| {
-            let snippet = b.snippet.as_deref().unwrap_or("");
-            let preview = if snippet.chars().count() > 40 {
-                let truncated: String = snippet.chars().take(40).collect();
+        .map(|n| {
+            let first_line = n.text.lines().next().unwrap_or("");
+            let preview = if first_line.chars().count() > 40 {
+                let truncated: String = first_line.chars().take(40).collect();
                 format!("{truncated}…")
             } else {
-                snippet.to_string()
+                first_line.to_string()
             };
-            let ref_str = match b.verse_end {
-                Some(end) => format!("{} {}:{}-{} — ", b.book, b.chapter, b.verse, end),
-                None => format!("{} {}:{} — ", b.book, b.chapter, b.verse),
-            };
+            let ref_str = format!("{} {}:{} — ", n.book, n.chapter, n.verse);
             ListItem::new(Line::from(vec![
                 Span::styled(
                     ref_str,
