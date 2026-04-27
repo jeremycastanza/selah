@@ -22,6 +22,8 @@ rand = "0.9"
 unicode-width = "0.2"
 
 [features]
+default = []
+api = []
 extra-translations = []
 
 [profile.release]

@@ -12,6 +12,7 @@ use crate::bible::db;
 use crate::config::bookmarks::{self as bm, BookmarkEntry};
 use crate::config::highlights::{self as hl, HighlightEntry, HighlightMap};
 use crate::config::notes::{self as notes, NoteEntry};
+use crate::config::providers::{self as providers, ProvidersConfig};
 use crate::config::session::{self, SessionState};
 use crate::ui::banner::{self, BannerState};
 use crate::ui::bookmarks::BookmarkListState;
@@ -38,6 +39,7 @@ pub struct App {
     pub highlight_map: HighlightMap,
     pub highlights_visible: bool,
     pub notes: Vec<NoteEntry>,
+    pub providers: ProvidersConfig,
     session: SessionState,
 }
 
@@ -66,6 +68,7 @@ impl App {
             highlight_map,
             highlights_visible: session.highlights_visible,
             notes: notes::load(),
+            providers: providers::load(),
             session,
         }
     }
