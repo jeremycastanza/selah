@@ -77,7 +77,7 @@ impl YouVersionClient {
     }
 
     pub fn get_passage(&self, version_id: u32, usfm: &str) -> Result<YvPassage, ApiError> {
-        let url = format!("{API_BASE}/v1/bibles/{version_id}/passages/{usfm}?format=text");
+        let url = format!("{API_BASE}/v1/bibles/{version_id}/passages/{usfm}?format=html");
         self.get_json(&url)
     }
 
@@ -103,75 +103,103 @@ impl YouVersionClient {
     }
 }
 
+/// Strip HTML tags from a string, preserving inner text.
+fn strip_html_tags(html: &str) -> String {
+    let mut result = String::with_capacity(html.len());
+    let mut in_tag = false;
+    for ch in html.chars() {
+        match ch {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            _ if !in_tag => result.push(ch),
+            _ => {}
+        }
+    }
+    result
+}
+
+/// Parse YV API HTML response into individual verses.
+///
+/// The HTML format uses `<span class="yv-v" v="N">` markers to delimit
+/// verses. We split on these markers and strip tags from each segment.
 pub fn parse_passage_to_verses(
     content: &str,
     book_num: u32,
     chapter: u32,
     translation: &str,
 ) -> Vec<Verse> {
-    let mut verses: Vec<Verse> = Vec::new();
     let book = book_name(book_num).to_string();
+    let mut verses: Vec<Verse> = Vec::new();
 
-    let mut current_verse: Option<u32> = None;
-    let mut current_text = String::new();
-    let mut chars = content.char_indices().peekable();
+    // Split on verse marker pattern: <span class="yv-v" v="N">
+    let marker = "class=\"yv-v\" v=\"";
+    let mut remaining = content;
 
-    while let Some((i, ch)) = chars.next() {
-        if ch == '[' {
-            let rest = &content[i + 1..];
-            if let Some(end) = rest.find(']') {
-                let inside = &rest[..end];
-                if let Ok(num) = inside.trim().parse::<u32>() {
-                    if let Some(v) = current_verse {
-                        let text = current_text.trim().to_string();
-                        if !text.is_empty() {
-                            verses.push(Verse {
-                                book: book.clone(),
-                                book_num,
-                                chapter,
-                                verse: v,
-                                text,
-                                translation: translation.to_uppercase(),
-                            });
-                        }
-                    }
-                    current_verse = Some(num);
-                    current_text.clear();
-                    for _ in 0..=end {
-                        chars.next();
-                    }
-                    continue;
-                }
+    while let Some(pos) = remaining.find(marker) {
+        let after_marker = &remaining[pos + marker.len()..];
+        let end_quote = match after_marker.find('"') {
+            Some(i) => i,
+            None => break,
+        };
+        let verse_num: u32 = match after_marker[..end_quote].parse() {
+            Ok(n) => n,
+            Err(_) => break,
+        };
+
+        // Find start of next verse marker (or end of string) for text extraction
+        let text_start = match after_marker[end_quote..].find('>') {
+            Some(i) => end_quote + i + 1,
+            None => break,
+        };
+
+        // Skip the yv-vlbl span that follows: <span class="yv-vlbl">N</span>
+        let text_content = &after_marker[text_start..];
+        let text_content = if let Some(lbl_start) = text_content.find("class=\"yv-vlbl\">") {
+            let after_lbl = &text_content[lbl_start..];
+            match after_lbl.find("</span>") {
+                Some(i) => &text_content[lbl_start + i + 7..],
+                None => text_content,
             }
-        }
-        if current_verse.is_some() {
-            current_text.push(ch);
-        }
-    }
+        } else {
+            text_content
+        };
 
-    if let Some(v) = current_verse {
-        let text = current_text.trim().to_string();
+        // Find where this verse's text ends (next verse marker or end)
+        let text_end = text_content.find(marker).unwrap_or(text_content.len());
+        let raw_text = &text_content[..text_end];
+        let text = strip_html_tags(raw_text).trim().to_string();
+
         if !text.is_empty() {
             verses.push(Verse {
                 book: book.clone(),
                 book_num,
                 chapter,
-                verse: v,
+                verse: verse_num,
                 text,
                 translation: translation.to_uppercase(),
             });
         }
+
+        remaining = if text_end < text_content.len() {
+            &text_content[text_end..]
+        } else {
+            ""
+        };
     }
 
+    // Fallback: if no verse markers found, treat entire content as verse 1
     if verses.is_empty() && !content.trim().is_empty() {
-        verses.push(Verse {
-            book,
-            book_num,
-            chapter,
-            verse: 1,
-            text: content.trim().to_string(),
-            translation: translation.to_uppercase(),
-        });
+        let text = strip_html_tags(content).trim().to_string();
+        if !text.is_empty() {
+            verses.push(Verse {
+                book,
+                book_num,
+                chapter,
+                verse: 1,
+                text,
+                translation: translation.to_uppercase(),
+            });
+        }
     }
 
     verses
@@ -182,9 +210,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_bracketed_verses() {
-        let content = "[1] In the beginning God created the heavens and the earth. [2] Now the earth was formless and void.";
-        let verses = parse_passage_to_verses(content, 1, 1, "kjv");
+    fn parse_html_verses() {
+        let content = r#"<div><div class="p"><span class="yv-v" v="1"></span><span class="yv-vlbl">1</span>In the beginning God created the heavens and the earth. <span class="yv-v" v="2"></span><span class="yv-vlbl">2</span>Now the earth was formless and void.</div></div>"#;
+        let verses = parse_passage_to_verses(content, 1, 1, "bsb");
         assert_eq!(verses.len(), 2);
         assert_eq!(verses[0].verse, 1);
         assert_eq!(
@@ -194,13 +222,13 @@ mod tests {
         assert_eq!(verses[1].verse, 2);
         assert_eq!(verses[1].text, "Now the earth was formless and void.");
         assert_eq!(verses[0].book, "Genesis");
-        assert_eq!(verses[0].translation, "KJV");
+        assert_eq!(verses[0].translation, "BSB");
     }
 
     #[test]
-    fn parse_single_verse() {
-        let content = "[16] For God so loved the world that he gave his one and only Son.";
-        let verses = parse_passage_to_verses(content, 43, 3, "niv");
+    fn parse_html_single_verse() {
+        let content = r#"<div><div class="p"><span class="yv-v" v="16"></span><span class="yv-vlbl">16</span>For God so loved the world that He gave His one and only Son.</div></div>"#;
+        let verses = parse_passage_to_verses(content, 43, 3, "bsb");
         assert_eq!(verses.len(), 1);
         assert_eq!(verses[0].verse, 16);
         assert_eq!(verses[0].book, "John");
@@ -209,12 +237,15 @@ mod tests {
     }
 
     #[test]
-    fn parse_no_markers_fallback() {
-        let content = "Some plain text without markers";
-        let verses = parse_passage_to_verses(content, 1, 1, "kjv");
-        assert_eq!(verses.len(), 1);
-        assert_eq!(verses[0].verse, 1);
-        assert_eq!(verses[0].text, "Some plain text without markers");
+    fn parse_html_multiline_paragraph() {
+        // Verses that span across paragraph divs
+        let content = r#"<div><div class="p"><span class="yv-v" v="5"></span><span class="yv-vlbl">5</span>Jesus answered, "Truly I tell you." <span class="yv-v" v="6"></span><span class="yv-vlbl">6</span>Flesh is born of flesh.</div><div class="p"><span class="yv-v" v="7"></span><span class="yv-vlbl">7</span>Do not be amazed.</div></div>"#;
+        let verses = parse_passage_to_verses(content, 43, 3, "bsb");
+        assert_eq!(verses.len(), 3);
+        assert_eq!(verses[0].verse, 5);
+        assert_eq!(verses[1].verse, 6);
+        assert_eq!(verses[2].verse, 7);
+        assert_eq!(verses[2].text, "Do not be amazed.");
     }
 
     #[test]
