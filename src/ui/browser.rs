@@ -10,6 +10,7 @@ use rusqlite::Connection;
 
 use crate::bible::books::BOOKS;
 use crate::bible::db;
+use crate::bible::resolver::{FetchResult, ResolveContext};
 use crate::bible::types::Chapter;
 use crate::config::bookmarks::BookmarkEntry;
 use crate::config::highlights::{HighlightEntry, HighlightMap};
@@ -81,6 +82,7 @@ pub struct BrowserState {
     pub status_flash: Option<(String, Instant)>,
     pub mark_start: Option<u32>,
     pub selected_verse_end: Option<u32>,
+    pub loading: bool,
 }
 
 impl BrowserState {
@@ -142,6 +144,7 @@ impl BrowserState {
             status_flash: None,
             mark_start: None,
             selected_verse_end: None,
+            loading: false,
         }
     }
 
@@ -234,12 +237,12 @@ impl BrowserState {
         }
     }
 
-    pub fn focus_next(&mut self, conn: &Connection) {
+    pub fn focus_next(&mut self, ctx: &mut ResolveContext) {
         let next = self.active_panel.next();
         if next != self.active_panel {
             if next == Panel::Verses || (next == Panel::Scripture && self.current_chapter.is_none())
             {
-                self.load_chapter(conn);
+                self.load_chapter(ctx);
             }
             self.active_panel = next;
         }
@@ -249,17 +252,30 @@ impl BrowserState {
         self.active_panel = self.active_panel.prev();
     }
 
-    pub fn load_chapter(&mut self, conn: &Connection) {
+    pub fn load_chapter(&mut self, ctx: &mut ResolveContext) {
         let book_num = (self.selected_book_idx + 1) as u32;
-        let verses = db::get_chapter(conn, &self.translation, book_num, self.selected_chapter);
-        if verses.is_empty() {
-            self.current_chapter = None;
-        } else {
-            self.current_chapter = Some(Chapter {
-                book: BOOKS[self.selected_book_idx].name.to_string(),
-                chapter: self.selected_chapter,
-                verses,
-            });
+        match ctx.resolve(&self.translation, book_num, self.selected_chapter) {
+            FetchResult::Ready(verses) => {
+                self.loading = false;
+                if verses.is_empty() {
+                    self.current_chapter = None;
+                } else {
+                    self.current_chapter = Some(Chapter {
+                        book: BOOKS[self.selected_book_idx].name.to_string(),
+                        chapter: self.selected_chapter,
+                        verses,
+                    });
+                }
+            }
+            FetchResult::Loading => {
+                self.loading = true;
+                self.current_chapter = None;
+            }
+            FetchResult::Error(msg) => {
+                self.loading = false;
+                self.current_chapter = None;
+                self.status_flash = Some((msg, std::time::Instant::now()));
+            }
         }
         self.verse_list.select(None);
         self.selected_verse = 0;
@@ -268,7 +284,7 @@ impl BrowserState {
 
     pub fn jump_to_verse(
         &mut self,
-        conn: &Connection,
+        ctx: &mut ResolveContext,
         book_num: u32,
         chapter: u32,
         verse: u32,
@@ -279,7 +295,7 @@ impl BrowserState {
         self.book_list.select(Some(self.selected_book_idx));
         self.chapter_list
             .select(Some(chapter.saturating_sub(1) as usize));
-        self.load_chapter(conn); // resets verse_list + selected_verse + scripture_scroll
+        self.load_chapter(ctx); // resets verse_list + selected_verse + scripture_scroll
         if verse > 0 {
             self.verse_list
                 .select(Some(verse.saturating_sub(1) as usize));
@@ -306,7 +322,7 @@ impl BrowserState {
         }
     }
 
-    pub fn handle_mouse(&mut self, mouse: MouseEvent, conn: &Connection) {
+    pub fn handle_mouse(&mut self, mouse: MouseEvent, ctx: &mut ResolveContext) {
         let pos = Position::new(mouse.column, mouse.row);
 
         match mouse.kind {
@@ -331,12 +347,12 @@ impl BrowserState {
                     if idx < max {
                         self.chapter_list.select(Some(idx));
                         self.selected_chapter = (idx + 1) as u32;
-                        self.load_chapter(conn);
+                        self.load_chapter(ctx);
                     }
                 } else if self.verses_rect.contains(pos) {
                     self.active_panel = Panel::Verses;
                     if self.current_chapter.is_none() {
-                        self.load_chapter(conn);
+                        self.load_chapter(ctx);
                     }
                     let verse_count = self
                         .current_chapter
@@ -644,9 +660,18 @@ mod tests {
         let conn = crate::bible::db::open_db();
         let session = SessionState::default();
         let mut state = BrowserState::new(&conn, &session);
+        let mut resolver = crate::bible::resolver::ChapterResolver::new();
 
         state.active_panel = Panel::Verses;
-        state.load_chapter(&conn);
+        let mut ctx = ResolveContext {
+            conn: &conn,
+            resolver: &mut resolver,
+            #[cfg(feature = "api")]
+            cache: None,
+            #[cfg(feature = "api")]
+            providers: &crate::config::providers::ProvidersConfig::default(),
+        };
+        state.load_chapter(&mut ctx);
         state.verse_list.select(Some(0));
         state.selected_verse = 1;
 
@@ -661,11 +686,20 @@ mod tests {
         let conn = crate::bible::db::open_db();
         let session = SessionState::default();
         let mut state = BrowserState::new(&conn, &session);
+        let mut resolver = crate::bible::resolver::ChapterResolver::new();
 
         state.active_panel = Panel::Chapters;
         state.current_chapter = None;
 
-        state.focus_next(&conn);
+        let mut ctx = ResolveContext {
+            conn: &conn,
+            resolver: &mut resolver,
+            #[cfg(feature = "api")]
+            cache: None,
+            #[cfg(feature = "api")]
+            providers: &crate::config::providers::ProvidersConfig::default(),
+        };
+        state.focus_next(&mut ctx);
         assert_eq!(state.active_panel, Panel::Verses);
         assert!(state.current_chapter.is_some());
     }
@@ -675,11 +709,20 @@ mod tests {
         let conn = crate::bible::db::open_db();
         let session = SessionState::default();
         let mut state = BrowserState::new(&conn, &session);
+        let mut resolver = crate::bible::resolver::ChapterResolver::new();
 
         state.active_panel = Panel::Verses;
         state.current_chapter = None;
 
-        state.focus_next(&conn);
+        let mut ctx = ResolveContext {
+            conn: &conn,
+            resolver: &mut resolver,
+            #[cfg(feature = "api")]
+            cache: None,
+            #[cfg(feature = "api")]
+            providers: &crate::config::providers::ProvidersConfig::default(),
+        };
+        state.focus_next(&mut ctx);
         assert_eq!(state.active_panel, Panel::Scripture);
         assert!(state.current_chapter.is_some());
     }

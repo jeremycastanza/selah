@@ -1,9 +1,9 @@
 use rusqlite::{Connection, params};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use super::youversion::YvVersion;
 use crate::bible::books::book_name;
 use crate::bible::types::Verse;
-use super::youversion::YvVersion;
 
 const CACHE_TTL_DAYS: i64 = 90;
 
@@ -25,9 +25,8 @@ impl CacheDb {
         let proj = directories::ProjectDirs::from("", "", "selah")
             .ok_or(rusqlite::Error::InvalidParameterName("no data dir".into()))?;
         let data_dir = proj.data_dir();
-        std::fs::create_dir_all(data_dir).map_err(|e| {
-            rusqlite::Error::InvalidParameterName(format!("create dir: {e}"))
-        })?;
+        std::fs::create_dir_all(data_dir)
+            .map_err(|e| rusqlite::Error::InvalidParameterName(format!("create dir: {e}")))?;
         let db_path = data_dir.join("cache.sqlite");
         let conn = Connection::open(db_path)?;
         Self::init_tables(&conn)?;
@@ -66,11 +65,14 @@ impl CacheDb {
     }
 
     pub fn get_chapter(&self, version_id: u32, book_num: u32, chapter: u32) -> Option<Vec<Verse>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT verse, text, translation, fetched_at FROM cached_verses
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT verse, text, translation, fetched_at FROM cached_verses
              WHERE version_id = ?1 AND book_num = ?2 AND chapter = ?3
              ORDER BY verse",
-        ).ok()?;
+            )
+            .ok()?;
 
         let rows: Vec<(u32, String, String, i64)> = stmt
             .query_map(params![version_id, book_num, chapter], |row| {
@@ -110,7 +112,15 @@ impl CacheDb {
                 "INSERT OR REPLACE INTO cached_verses
                  (version_id, book_num, chapter, verse, text, translation, fetched_at)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                params![version_id, book_num, chapter, v.verse, v.text, v.translation, now],
+                params![
+                    version_id,
+                    book_num,
+                    chapter,
+                    v.verse,
+                    v.text,
+                    v.translation,
+                    now
+                ],
             );
         }
     }
@@ -139,21 +149,31 @@ impl CacheDb {
         })
         .map(|rows| {
             rows.filter_map(|r| r.ok())
-                .filter(|(_, _, _, _, _, _, fetched_at): &(u32, String, String, String, Option<String>, String, i64)| {
-                    Self::is_fresh(*fetched_at)
-                })
-                .map(|(version_id, abbreviation, title, language_tag, copyright, books_json, _)| {
-                    let books: Vec<String> =
-                        serde_json::from_str(&books_json).unwrap_or_default();
-                    CachedVersion {
-                        version_id,
-                        abbreviation,
-                        title,
-                        language_tag,
-                        copyright,
-                        books,
-                    }
-                })
+                .filter(
+                    |(_, _, _, _, _, _, fetched_at): &(
+                        u32,
+                        String,
+                        String,
+                        String,
+                        Option<String>,
+                        String,
+                        i64,
+                    )| { Self::is_fresh(*fetched_at) },
+                )
+                .map(
+                    |(version_id, abbreviation, title, language_tag, copyright, books_json, _)| {
+                        let books: Vec<String> =
+                            serde_json::from_str(&books_json).unwrap_or_default();
+                        CachedVersion {
+                            version_id,
+                            abbreviation,
+                            title,
+                            language_tag,
+                            copyright,
+                            books,
+                        }
+                    },
+                )
                 .collect()
         })
         .unwrap_or_default()
@@ -229,7 +249,9 @@ mod tests {
         let verses = make_verses(1, 1, 3);
         cache.store_chapter(1, 1, 1, &verses);
 
-        let result = cache.get_chapter(1, 1, 1).expect("should return cached chapter");
+        let result = cache
+            .get_chapter(1, 1, 1)
+            .expect("should return cached chapter");
         assert_eq!(result.len(), 3);
         assert_eq!(result[0].verse, 1);
         assert_eq!(result[0].text, "Verse 1 text");
@@ -253,16 +275,14 @@ mod tests {
     #[test]
     fn test_store_and_retrieve_versions() {
         let cache = CacheDb::open_in_memory();
-        let versions = vec![
-            YvVersion {
-                id: 1,
-                abbreviation: "KJV".to_string(),
-                localized_title: "King James Version".to_string(),
-                language_tag: "en".to_string(),
-                copyright: Some("Public Domain".to_string()),
-                books: vec!["GEN".to_string(), "EXO".to_string()],
-            },
-        ];
+        let versions = vec![YvVersion {
+            id: 1,
+            abbreviation: "KJV".to_string(),
+            localized_title: "King James Version".to_string(),
+            language_tag: "en".to_string(),
+            copyright: Some("Public Domain".to_string()),
+            books: vec!["GEN".to_string(), "EXO".to_string()],
+        }];
         cache.store_versions(&versions);
 
         let result = cache.get_versions();
@@ -311,29 +331,45 @@ mod tests {
         cache.evict_expired();
 
         // Old entries removed
-        let verse_count: i64 = cache.conn.query_row(
-            "SELECT COUNT(*) FROM cached_verses WHERE version_id = 1 AND chapter = 1",
-            [], |row| row.get(0),
-        ).unwrap();
+        let verse_count: i64 = cache
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM cached_verses WHERE version_id = 1 AND chapter = 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
         assert_eq!(verse_count, 0);
 
         // Fresh entries remain
-        let fresh_count: i64 = cache.conn.query_row(
-            "SELECT COUNT(*) FROM cached_verses WHERE version_id = 1 AND chapter = 2",
-            [], |row| row.get(0),
-        ).unwrap();
+        let fresh_count: i64 = cache
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM cached_verses WHERE version_id = 1 AND chapter = 2",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
         assert_eq!(fresh_count, 1);
 
-        let version_count: i64 = cache.conn.query_row(
-            "SELECT COUNT(*) FROM cached_versions WHERE version_id = 99",
-            [], |row| row.get(0),
-        ).unwrap();
+        let version_count: i64 = cache
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM cached_versions WHERE version_id = 99",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
         assert_eq!(version_count, 0);
 
-        let fresh_version_count: i64 = cache.conn.query_row(
-            "SELECT COUNT(*) FROM cached_versions WHERE version_id = 100",
-            [], |row| row.get(0),
-        ).unwrap();
+        let fresh_version_count: i64 = cache
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM cached_versions WHERE version_id = 100",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
         assert_eq!(fresh_version_count, 1);
     }
 

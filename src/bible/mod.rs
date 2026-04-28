@@ -1,6 +1,7 @@
 pub mod books;
 pub mod db;
 pub mod random;
+pub mod resolver;
 pub mod types;
 
 pub struct TranslationInfo {

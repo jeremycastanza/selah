@@ -8,7 +8,10 @@ use rusqlite::Connection;
 use std::time::Instant;
 
 use crate::bible::TRANSLATIONS;
+use crate::bible::books::BOOKS;
 use crate::bible::db;
+use crate::bible::resolver::{ChapterResolver, FetchResult, ResolveContext};
+use crate::bible::types::Chapter;
 use crate::config::bookmarks::{self as bm, BookmarkEntry};
 use crate::config::highlights::{self as hl, HighlightEntry, HighlightMap};
 use crate::config::notes::{self as notes, NoteEntry};
@@ -40,6 +43,7 @@ pub struct App {
     pub highlights_visible: bool,
     pub notes: Vec<NoteEntry>,
     pub providers: ProvidersConfig,
+    pub resolver: ChapterResolver,
     #[cfg(feature = "api")]
     pub cache: Option<crate::api::cache::CacheDb>,
     #[cfg(not(feature = "api"))]
@@ -73,6 +77,7 @@ impl App {
             highlights_visible: session.highlights_visible,
             notes: notes::load(),
             providers: providers::load(),
+            resolver: ChapterResolver::new(),
             #[cfg(feature = "api")]
             cache: crate::api::cache::CacheDb::open().ok(),
             #[cfg(not(feature = "api"))]
@@ -116,6 +121,30 @@ impl App {
                 if state.done {
                     self.mode =
                         AppMode::Browser(Box::new(BrowserState::new(&self.db, &self.session)));
+                }
+            }
+
+            if let AppMode::Browser(ref mut state) = self.mode
+                && let Some((book_idx, chapter, result)) = self.resolver.poll()
+            {
+                match result {
+                    FetchResult::Ready(verses) => {
+                        state.loading = false;
+                        if verses.is_empty() {
+                            state.current_chapter = None;
+                        } else {
+                            state.current_chapter = Some(Chapter {
+                                book: BOOKS[book_idx].name.to_string(),
+                                chapter,
+                                verses,
+                            });
+                        }
+                    }
+                    FetchResult::Error(msg) => {
+                        state.loading = false;
+                        state.status_flash = Some((msg, Instant::now()));
+                    }
+                    FetchResult::Loading => {}
                 }
             }
 
@@ -277,7 +306,6 @@ impl App {
                             KeyCode::Enter => {
                                 if let Some(i) = picker.list_state.selected()
                                     && let Some(t) = TRANSLATIONS.get(i)
-                                    && t.offline
                                 {
                                     new_translation = Some(t.code.to_string());
                                     close_overlay = true;
@@ -438,11 +466,27 @@ impl App {
                         self.highlight_map = hl::build_map(&self.highlights);
                     }
                     if let Some((book_num, chapter, verse, verse_end)) = jump_target {
-                        state.jump_to_verse(&self.db, book_num, chapter, verse, verse_end);
+                        let mut ctx = ResolveContext {
+                            conn: &self.db,
+                            resolver: &mut self.resolver,
+                            #[cfg(feature = "api")]
+                            cache: self.cache.as_ref(),
+                            #[cfg(feature = "api")]
+                            providers: &self.providers,
+                        };
+                        state.jump_to_verse(&mut ctx, book_num, chapter, verse, verse_end);
                     }
                     if let Some(code) = new_translation {
                         state.translation = code;
-                        state.load_chapter(&self.db);
+                        let mut ctx = ResolveContext {
+                            conn: &self.db,
+                            resolver: &mut self.resolver,
+                            #[cfg(feature = "api")]
+                            cache: self.cache.as_ref(),
+                            #[cfg(feature = "api")]
+                            providers: &self.providers,
+                        };
+                        state.load_chapter(&mut ctx);
                     }
                     if let Some((book, chapter, verse, text)) = save_note {
                         notes::upsert(&mut self.notes, &book, chapter, verse, &text);
@@ -540,8 +584,16 @@ impl App {
                         if let Some(verse) = db::get_random_verse(&self.db, &state.translation) {
                             let flash =
                                 format!("→ {} {}:{}", verse.book, verse.chapter, verse.verse);
+                            let mut ctx = ResolveContext {
+                                conn: &self.db,
+                                resolver: &mut self.resolver,
+                                #[cfg(feature = "api")]
+                                cache: self.cache.as_ref(),
+                                #[cfg(feature = "api")]
+                                providers: &self.providers,
+                            };
                             state.jump_to_verse(
-                                &self.db,
+                                &mut ctx,
                                 verse.book_num,
                                 verse.chapter,
                                 verse.verse,
@@ -629,7 +681,15 @@ impl App {
                         state.focus_prev();
                     }
                     KeyCode::Char('l') | KeyCode::Right | KeyCode::Enter => {
-                        state.focus_next(&self.db);
+                        let mut ctx = ResolveContext {
+                            conn: &self.db,
+                            resolver: &mut self.resolver,
+                            #[cfg(feature = "api")]
+                            cache: self.cache.as_ref(),
+                            #[cfg(feature = "api")]
+                            providers: &self.providers,
+                        };
+                        state.focus_next(&mut ctx);
                     }
                     KeyCode::Esc if state.mark_start.is_some() => {
                         state.mark_start = None;
@@ -646,7 +706,15 @@ impl App {
             if state.overlay.is_some() {
                 return;
             }
-            state.handle_mouse(mouse, &self.db);
+            let mut ctx = ResolveContext {
+                conn: &self.db,
+                resolver: &mut self.resolver,
+                #[cfg(feature = "api")]
+                cache: self.cache.as_ref(),
+                #[cfg(feature = "api")]
+                providers: &self.providers,
+            };
+            state.handle_mouse(mouse, &mut ctx);
         }
     }
 

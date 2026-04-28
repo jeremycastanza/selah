@@ -183,8 +183,7 @@ mod tests {
 
     #[test]
     fn parse_bracketed_verses() {
-        let content =
-            "[1] In the beginning God created the heavens and the earth. [2] Now the earth was formless and void.";
+        let content = "[1] In the beginning God created the heavens and the earth. [2] Now the earth was formless and void.";
         let verses = parse_passage_to_verses(content, 1, 1, "kjv");
         assert_eq!(verses.len(), 2);
         assert_eq!(verses[0].verse, 1);
@@ -193,10 +192,7 @@ mod tests {
             "In the beginning God created the heavens and the earth."
         );
         assert_eq!(verses[1].verse, 2);
-        assert_eq!(
-            verses[1].text,
-            "Now the earth was formless and void."
-        );
+        assert_eq!(verses[1].text, "Now the earth was formless and void.");
         assert_eq!(verses[0].book, "Genesis");
         assert_eq!(verses[0].translation, "KJV");
     }

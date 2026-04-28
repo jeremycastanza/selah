@@ -32,9 +32,7 @@ pub struct ProvidersConfig {
 
 impl ProvidersConfig {
     pub fn active_provider(&self, kind: ProviderKind) -> Option<&ProviderConfig> {
-        self.providers
-            .iter()
-            .find(|p| p.kind == kind && p.enabled)
+        self.providers.iter().find(|p| p.kind == kind && p.enabled)
     }
 
     pub fn has_youversion(&self) -> bool {
@@ -62,16 +60,14 @@ pub fn load() -> ProvidersConfig {
         .providers
         .iter()
         .any(|p| p.kind == ProviderKind::YouVersion)
+        && let Ok(key) = std::env::var("SELAH_YVP_APP_KEY")
+        && !key.is_empty()
     {
-        if let Ok(key) = std::env::var("SELAH_YVP_APP_KEY") {
-            if !key.is_empty() {
-                config.providers.push(ProviderConfig {
-                    kind: ProviderKind::YouVersion,
-                    app_key: key,
-                    enabled: true,
-                });
-            }
-        }
+        config.providers.push(ProviderConfig {
+            kind: ProviderKind::YouVersion,
+            app_key: key,
+            enabled: true,
+        });
     }
 
     config
