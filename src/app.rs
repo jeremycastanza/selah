@@ -40,6 +40,10 @@ pub struct App {
     pub highlights_visible: bool,
     pub notes: Vec<NoteEntry>,
     pub providers: ProvidersConfig,
+    #[cfg(feature = "api")]
+    pub cache: Option<crate::api::cache::CacheDb>,
+    #[cfg(not(feature = "api"))]
+    pub cache: Option<()>,
     session: SessionState,
 }
 
@@ -69,6 +73,10 @@ impl App {
             highlights_visible: session.highlights_visible,
             notes: notes::load(),
             providers: providers::load(),
+            #[cfg(feature = "api")]
+            cache: crate::api::cache::CacheDb::open().ok(),
+            #[cfg(not(feature = "api"))]
+            cache: None,
             session,
         }
     }
