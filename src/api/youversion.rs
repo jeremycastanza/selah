@@ -244,6 +244,21 @@ mod tests {
 
     #[test]
     #[ignore]
+    fn live_api_fetch_versions() {
+        let key = std::env::var("SELAH_YVP_APP_KEY").expect("Set SELAH_YVP_APP_KEY");
+        let client = YouVersionClient::new(key);
+        let versions = client
+            .get_versions("en")
+            .expect("Should fetch English versions");
+        assert!(!versions.is_empty());
+        eprintln!("Got {} versions", versions.len());
+        for v in &versions {
+            eprintln!("  {} (id={}) - {}", v.abbreviation, v.id, v.localized_title);
+        }
+    }
+
+    #[test]
+    #[ignore]
     fn live_api_fetch_passage() {
         let key = std::env::var("SELAH_YVP_APP_KEY").expect("Set SELAH_YVP_APP_KEY");
         let client = YouVersionClient::new(key);

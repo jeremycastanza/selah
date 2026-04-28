@@ -440,6 +440,94 @@ impl App {
                             KeyCode::Esc => close_overlay = true,
                             _ => {}
                         },
+                        Some(OverlayKind::Settings(ref mut settings)) => {
+                            // When editing a key, capture all input first
+                            if let crate::ui::settings::SettingsMode::EditingKey(ref mut input) = settings.mode {
+                                match key {
+                                    KeyCode::Char(c) => {
+                                        input.push(c);
+                                    }
+                                    KeyCode::Backspace => { input.pop(); }
+                                    KeyCode::Enter => {
+                                        if !input.is_empty() {
+                                            let new_key = input.clone();
+                                            if let Some(p) =
+                                                self.providers.providers.iter_mut().find(|p| {
+                                                    p.kind == crate::config::providers::ProviderKind::YouVersion
+                                                })
+                                            {
+                                                p.app_key = new_key;
+                                                p.enabled = true;
+                                            } else {
+                                                self.providers.providers.push(
+                                                    crate::config::providers::ProviderConfig {
+                                                        kind: crate::config::providers::ProviderKind::YouVersion,
+                                                        app_key: new_key,
+                                                        enabled: true,
+                                                    },
+                                                );
+                                            }
+                                            crate::config::providers::save(&self.providers);
+                                            settings.mode = crate::ui::settings::SettingsMode::View;
+                                            settings.sync_status = Some("✓ API key saved".to_string());
+                                        }
+                                    }
+                                    KeyCode::Esc => {
+                                        settings.mode = crate::ui::settings::SettingsMode::View;
+                                    }
+                                    _ => {}
+                                }
+                            } else {
+                                // View mode shortcuts
+                                match key {
+                                    KeyCode::Char('S') | KeyCode::Char('s') => {
+                                        if self.providers.has_youversion() {
+                                            #[cfg(feature = "api")]
+                                            {
+                                                let api_key = self
+                                                    .providers
+                                                    .youversion_key()
+                                                    .unwrap_or_default()
+                                                    .to_string();
+                                                let client =
+                                                    crate::api::youversion::YouVersionClient::new(api_key);
+                                                match client.get_versions("en") {
+                                                    Ok(versions) => {
+                                                        if let Some(ref cache) = self.cache {
+                                                            cache.store_versions(&versions);
+                                                        }
+                                                        settings.sync_status = Some(format!(
+                                                            "✓ Synced {} translations",
+                                                            versions.len()
+                                                        ));
+                                                    }
+                                                    Err(e) => {
+                                                        settings.sync_status =
+                                                            Some(format!("✗ Sync failed: {e}"));
+                                                    }
+                                                }
+                                            }
+                                            #[cfg(not(feature = "api"))]
+                                            {
+                                                settings.sync_status =
+                                                    Some("API feature not enabled".to_string());
+                                            }
+                                        } else {
+                                            settings.sync_status =
+                                                Some("No API key configured".to_string());
+                                        }
+                                    }
+                                    KeyCode::Char('k') | KeyCode::Char('K') => {
+                                        settings.mode =
+                                            crate::ui::settings::SettingsMode::EditingKey(String::new());
+                                    }
+                                    KeyCode::Esc => {
+                                        close_overlay = true;
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
                         Some(OverlayKind::QuitConfirm) => match key {
                             KeyCode::Char('y') | KeyCode::Enter => {
                                 self.should_quit = true;
@@ -671,6 +759,11 @@ impl App {
                         }
                         state.overlay = Some(OverlayKind::NotesList(nl_state));
                     }
+                    KeyCode::Char('S') => {
+                        state.overlay = Some(OverlayKind::Settings(
+                            crate::ui::settings::SettingsState::default(),
+                        ));
+                    }
                     KeyCode::Char('j') | KeyCode::Down => {
                         state.move_down();
                     }
@@ -726,6 +819,28 @@ impl App {
                 banner::render_banner(frame, frame.area(), state, &theme);
             }
             AppMode::Browser(ref mut state) => {
+                let has_api_key = self.providers.has_youversion();
+                let masked_key = match self.providers.youversion_key() {
+                    Some(k) if k.len() > 6 => format!("****{}", &k[k.len() - 6..]),
+                    Some(k) => format!("****{k}"),
+                    None => "(not set)".to_string(),
+                };
+
+                #[cfg(feature = "api")]
+                let (cached_translations, cached_count) = {
+                    let cached = self
+                        .cache
+                        .as_ref()
+                        .map(|c| c.get_versions())
+                        .unwrap_or_default();
+                    let abbrevs: Vec<String> =
+                        cached.iter().map(|v| v.abbreviation.clone()).collect();
+                    let count = abbrevs.len();
+                    (abbrevs, count)
+                };
+                #[cfg(not(feature = "api"))]
+                let (cached_translations, cached_count) = (vec![], 0usize);
+
                 browser::render_browser(
                     frame,
                     frame.area(),
@@ -737,6 +852,10 @@ impl App {
                     self.highlights_visible,
                     &self.highlights,
                     &self.notes,
+                    has_api_key,
+                    &cached_translations,
+                    &masked_key,
+                    cached_count,
                 );
             }
         }

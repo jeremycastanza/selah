@@ -22,6 +22,7 @@ use crate::ui::note_list::{NoteListState, render_note_list};
 use crate::ui::notes::{NoteEditorState, render_note_editor};
 use crate::ui::quit_confirm::render_quit_confirm;
 use crate::ui::search::{SearchState, render_search};
+use crate::ui::settings::{SettingsState, render_settings};
 use crate::ui::theme::Theme;
 use crate::ui::translation::{TranslationPickerState, render_translation_picker};
 
@@ -61,6 +62,7 @@ pub enum OverlayKind {
     NoteEditor(NoteEditorState),
     NotesList(NoteListState),
     QuitConfirm,
+    Settings(SettingsState),
 }
 
 pub struct BrowserState {
@@ -100,9 +102,19 @@ impl BrowserState {
 
         let selected_chapter = (chapter_idx + 1) as u32;
 
+        // Only load from bundled DB on startup; API translations load via resolver
+        let is_bundled = crate::bible::TRANSLATIONS
+            .iter()
+            .any(|t| t.code.eq_ignore_ascii_case(&session.translation) && t.offline);
+        let initial_translation = if is_bundled {
+            session.translation.clone()
+        } else {
+            "KJV".to_string()
+        };
+
         let verses = db::get_chapter(
             conn,
-            &session.translation,
+            &initial_translation,
             (book_idx + 1) as u32,
             selected_chapter,
         );
@@ -426,6 +438,10 @@ pub fn render_browser(
     highlights_visible: bool,
     highlights: &[HighlightEntry],
     notes: &[NoteEntry],
+    has_api_key: bool,
+    cached_translations: &[String],
+    masked_key: &str,
+    cached_count: usize,
 ) {
     let [browser_area, status_area] =
         Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).areas(area);
@@ -510,55 +526,62 @@ pub fn render_browser(
 
     // Scripture panel
     let scripture_block = panel_block("Scripture", state.active_panel == Panel::Scripture, theme);
-    let scripture_lines: Vec<Line> = state
-        .current_chapter
-        .as_ref()
-        .map(|ch| {
-            let verses: &[_] = if let (Some(start), Some(end)) =
-                (state.verse_list.selected(), state.selected_verse_end)
-            {
-                let end_idx = (end as usize).min(ch.verses.len());
-                &ch.verses[start..end_idx]
-            } else if let Some(idx) = state.verse_list.selected() {
-                ch.verses.get(idx).map(std::slice::from_ref).unwrap_or(&[])
-            } else {
-                &ch.verses
-            };
-            verses
-                .iter()
-                .map(|v| {
-                    let highlight_bg = if highlights_visible {
-                        highlight_map
-                            .get(&(ch.book.clone(), ch.chapter, v.verse))
-                            .map(|color| theme.verse_highlight_bg(*color))
-                    } else {
-                        None
-                    };
-                    let text_style = match highlight_bg {
-                        Some(bg) => Style::default().fg(theme.text).bg(bg),
-                        None => Style::default().fg(theme.text),
-                    };
-                    let has_note = notes.iter().any(|n| {
-                        n.book == ch.book && n.chapter == ch.chapter && n.verse == v.verse
-                    });
-                    let verse_label = if has_note {
-                        format!("{}* ", v.verse)
-                    } else {
-                        format!("{}  ", v.verse)
-                    };
-                    Line::from(vec![
-                        Span::styled(
-                            verse_label,
-                            Style::default()
-                                .fg(theme.text_dim)
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                        Span::styled(v.text.as_str(), text_style),
-                    ])
-                })
-                .collect()
-        })
-        .unwrap_or_default();
+    let scripture_lines: Vec<Line> = if state.loading && state.current_chapter.is_none() {
+        vec![Line::from(Span::styled(
+            "  Loading...",
+            Style::default().fg(theme.text_dim),
+        ))]
+    } else {
+        state
+            .current_chapter
+            .as_ref()
+            .map(|ch| {
+                let verses: &[_] = if let (Some(start), Some(end)) =
+                    (state.verse_list.selected(), state.selected_verse_end)
+                {
+                    let end_idx = (end as usize).min(ch.verses.len());
+                    &ch.verses[start..end_idx]
+                } else if let Some(idx) = state.verse_list.selected() {
+                    ch.verses.get(idx).map(std::slice::from_ref).unwrap_or(&[])
+                } else {
+                    &ch.verses
+                };
+                verses
+                    .iter()
+                    .map(|v| {
+                        let highlight_bg = if highlights_visible {
+                            highlight_map
+                                .get(&(ch.book.clone(), ch.chapter, v.verse))
+                                .map(|color| theme.verse_highlight_bg(*color))
+                        } else {
+                            None
+                        };
+                        let text_style = match highlight_bg {
+                            Some(bg) => Style::default().fg(theme.text).bg(bg),
+                            None => Style::default().fg(theme.text),
+                        };
+                        let has_note = notes.iter().any(|n| {
+                            n.book == ch.book && n.chapter == ch.chapter && n.verse == v.verse
+                        });
+                        let verse_label = if has_note {
+                            format!("{}* ", v.verse)
+                        } else {
+                            format!("{}  ", v.verse)
+                        };
+                        Line::from(vec![
+                            Span::styled(
+                                verse_label,
+                                Style::default()
+                                    .fg(theme.text_dim)
+                                    .add_modifier(Modifier::BOLD),
+                            ),
+                            Span::styled(v.text.as_str(), text_style),
+                        ])
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
     let scripture = Paragraph::new(scripture_lines)
         .block(scripture_block)
         .wrap(Wrap { trim: false })
@@ -578,7 +601,7 @@ pub fn render_browser(
     let status_left = if let Some((ref msg, _)) = state.status_flash {
         msg.clone()
     } else {
-        "q: quit | /: search | b: bookmark | H: highlight | n: note | r: random | ?: splash"
+        "q: quit | /: search | b: bookmark | H: highlight | n: note | r: random | S: settings | ?: splash"
             .to_string()
     };
 
@@ -593,12 +616,23 @@ pub fn render_browser(
             OverlayKind::Search(s) => render_search(frame, area, s, theme),
             OverlayKind::Bookmarks(b) => render_bookmarks(frame, area, b, bookmarks, theme),
             OverlayKind::Translation(t) => {
-                render_translation_picker(frame, area, t, &state.translation, theme)
+                render_translation_picker(
+                    frame,
+                    area,
+                    t,
+                    &state.translation,
+                    has_api_key,
+                    cached_translations,
+                    theme,
+                )
             }
             OverlayKind::Highlights(h) => render_highlight_list(frame, area, h, highlights, theme),
             OverlayKind::NoteEditor(n) => render_note_editor(frame, area, n, theme),
             OverlayKind::NotesList(n) => render_note_list(frame, area, n, notes, theme),
             OverlayKind::QuitConfirm => render_quit_confirm(frame, area, theme),
+            OverlayKind::Settings(s) => {
+                render_settings(frame, area, s, has_api_key, masked_key, cached_count, theme)
+            }
         }
     }
 }

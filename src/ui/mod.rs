@@ -6,5 +6,6 @@ pub mod note_list;
 pub mod notes;
 pub mod quit_confirm;
 pub mod search;
+pub mod settings;
 pub mod theme;
 pub mod translation;

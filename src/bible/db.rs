@@ -47,8 +47,11 @@ pub fn get_chapter(
         "SELECT b, c, v, t FROM {} WHERE b = ?1 AND c = ?2 ORDER BY v",
         table
     );
-    let mut stmt = conn.prepare(&sql).expect("Failed to prepare get_chapter");
-    stmt.query_map(rusqlite::params![book_num, chapter], |row| {
+    let mut stmt = match conn.prepare(&sql) {
+        Ok(s) => s,
+        Err(_) => return vec![],
+    };
+    match stmt.query_map(rusqlite::params![book_num, chapter], |row| {
         let b: u32 = row.get(0)?;
         Ok(Verse {
             book: book_name(b).to_string(),
@@ -58,10 +61,10 @@ pub fn get_chapter(
             text: row.get(3)?,
             translation: translation.to_uppercase(),
         })
-    })
-    .expect("Failed to query chapter")
-    .filter_map(|r| r.ok())
-    .collect()
+    }) {
+        Ok(rows) => rows.filter_map(|r| r.ok()).collect(),
+        Err(_) => vec![],
+    }
 }
 
 pub fn get_verse(
