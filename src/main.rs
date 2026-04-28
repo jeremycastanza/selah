@@ -7,6 +7,9 @@ mod bible;
 mod config;
 mod ui;
 
+#[cfg(feature = "api")]
+mod api;
+
 use clap::Parser;
 
 use bible::db;
