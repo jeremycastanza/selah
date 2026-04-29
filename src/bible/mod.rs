@@ -11,6 +11,16 @@ pub struct TranslationInfo {
     pub offline: bool,
 }
 
+/// Return the translation code to use for bundled DB queries.
+/// If the given translation is bundled (offline), return it as-is;
+/// otherwise fall back to "KJV".
+pub fn bundled_translation(code: &str) -> &str {
+    let is_bundled = TRANSLATIONS
+        .iter()
+        .any(|t| t.code.eq_ignore_ascii_case(code) && t.offline);
+    if is_bundled { code } else { "KJV" }
+}
+
 pub const TRANSLATIONS: &[TranslationInfo] = &[
     // Bundled
     TranslationInfo {

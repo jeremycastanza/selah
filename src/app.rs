@@ -167,7 +167,8 @@ impl App {
             AppMode::Browser(ref mut state) => {
                 // Handle overlay keys
                 if state.overlay.is_some() {
-                    let translation = state.translation.clone();
+                    let translation =
+                        crate::bible::bundled_translation(&state.translation).to_string();
                     let mut close_overlay = false;
                     let mut jump_target: Option<(u32, u32, u32, Option<u32>)> = None;
                     let mut delete_bookmark: Option<usize> = None;
@@ -669,7 +670,8 @@ impl App {
                         state.overlay = Some(OverlayKind::Translation(picker));
                     }
                     KeyCode::Char('r') => {
-                        if let Some(verse) = db::get_random_verse(&self.db, &state.translation) {
+                        let db_t = crate::bible::bundled_translation(&state.translation);
+                        if let Some(verse) = db::get_random_verse(&self.db, db_t) {
                             let flash =
                                 format!("→ {} {}:{}", verse.book, verse.chapter, verse.verse);
                             let mut ctx = ResolveContext {

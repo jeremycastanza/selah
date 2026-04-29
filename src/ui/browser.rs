@@ -103,14 +103,8 @@ impl BrowserState {
         let selected_chapter = (chapter_idx + 1) as u32;
 
         // Only load from bundled DB on startup; API translations load via resolver
-        let is_bundled = crate::bible::TRANSLATIONS
-            .iter()
-            .any(|t| t.code.eq_ignore_ascii_case(&session.translation) && t.offline);
-        let initial_translation = if is_bundled {
-            session.translation.clone()
-        } else {
-            "KJV".to_string()
-        };
+        let initial_translation =
+            crate::bible::bundled_translation(&session.translation).to_string();
 
         let verses = db::get_chapter(
             conn,

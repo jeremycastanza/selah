@@ -21,7 +21,7 @@ fn main() {
     match cli.command {
         Some(Commands::Random { translation }) => {
             let conn = db::open_db();
-            match db::get_random_verse(&conn, &translation) {
+            match db::get_random_verse(&conn, bible::bundled_translation(&translation)) {
                 Some(verse) => {
                     println!(
                         "{} {}:{} — {}",
