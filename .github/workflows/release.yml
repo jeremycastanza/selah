@@ -41,8 +41,6 @@ permissions:
 # Also runs on push to main (dry-run plan only, no publish).
 on:
   push:
-    branches:
-      - main
     tags:
       - "**[0-9]+.[0-9]+.[0-9]+*"
 
