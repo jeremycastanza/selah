@@ -165,5 +165,3 @@ mod tests {
         assert_eq!(config.youversion_key(), Some("env-key-456"));
     }
 }
-
-
