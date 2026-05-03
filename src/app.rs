@@ -8,10 +8,14 @@ use rusqlite::Connection;
 use std::time::Instant;
 
 use crate::bible::TRANSLATIONS;
+use crate::bible::books::BOOKS;
 use crate::bible::db;
+use crate::bible::resolver::{ChapterResolver, FetchResult, ResolveContext};
+use crate::bible::types::Chapter;
 use crate::config::bookmarks::{self as bm, BookmarkEntry};
 use crate::config::highlights::{self as hl, HighlightEntry, HighlightMap};
 use crate::config::notes::{self as notes, NoteEntry};
+use crate::config::providers::{self as providers, ProvidersConfig};
 use crate::config::session::{self, SessionState};
 use crate::ui::banner::{self, BannerState};
 use crate::ui::bookmarks::BookmarkListState;
@@ -38,6 +42,12 @@ pub struct App {
     pub highlight_map: HighlightMap,
     pub highlights_visible: bool,
     pub notes: Vec<NoteEntry>,
+    pub providers: ProvidersConfig,
+    pub resolver: ChapterResolver,
+    #[cfg(feature = "api")]
+    pub cache: Option<crate::api::cache::CacheDb>,
+    #[cfg(not(feature = "api"))]
+    pub cache: Option<()>,
     session: SessionState,
 }
 
@@ -66,6 +76,12 @@ impl App {
             highlight_map,
             highlights_visible: session.highlights_visible,
             notes: notes::load(),
+            providers: providers::load(),
+            resolver: ChapterResolver::new(),
+            #[cfg(feature = "api")]
+            cache: crate::api::cache::CacheDb::open().ok(),
+            #[cfg(not(feature = "api"))]
+            cache: None,
             session,
         }
     }
@@ -108,6 +124,30 @@ impl App {
                 }
             }
 
+            if let AppMode::Browser(ref mut state) = self.mode
+                && let Some((book_idx, chapter, result)) = self.resolver.poll()
+            {
+                match result {
+                    FetchResult::Ready(verses) => {
+                        state.loading = false;
+                        if verses.is_empty() {
+                            state.current_chapter = None;
+                        } else {
+                            state.current_chapter = Some(Chapter {
+                                book: BOOKS[book_idx].name.to_string(),
+                                chapter,
+                                verses,
+                            });
+                        }
+                    }
+                    FetchResult::Error(msg) => {
+                        state.loading = false;
+                        state.status_flash = Some((msg, Instant::now()));
+                    }
+                    FetchResult::Loading => {}
+                }
+            }
+
             if self.should_quit {
                 break;
             }
@@ -127,7 +167,8 @@ impl App {
             AppMode::Browser(ref mut state) => {
                 // Handle overlay keys
                 if state.overlay.is_some() {
-                    let translation = state.translation.clone();
+                    let translation =
+                        crate::bible::bundled_translation(&state.translation).to_string();
                     let mut close_overlay = false;
                     let mut jump_target: Option<(u32, u32, u32, Option<u32>)> = None;
                     let mut delete_bookmark: Option<usize> = None;
@@ -266,7 +307,6 @@ impl App {
                             KeyCode::Enter => {
                                 if let Some(i) = picker.list_state.selected()
                                     && let Some(t) = TRANSLATIONS.get(i)
-                                    && t.offline
                                 {
                                     new_translation = Some(t.code.to_string());
                                     close_overlay = true;
@@ -401,6 +441,94 @@ impl App {
                             KeyCode::Esc => close_overlay = true,
                             _ => {}
                         },
+                        Some(OverlayKind::Settings(ref mut settings)) => {
+                            // When editing a key, capture all input first
+                            if let crate::ui::settings::SettingsMode::EditingKey(ref mut input) = settings.mode {
+                                match key {
+                                    KeyCode::Char(c) => {
+                                        input.push(c);
+                                    }
+                                    KeyCode::Backspace => { input.pop(); }
+                                    KeyCode::Enter => {
+                                        if !input.is_empty() {
+                                            let new_key = input.clone();
+                                            if let Some(p) =
+                                                self.providers.providers.iter_mut().find(|p| {
+                                                    p.kind == crate::config::providers::ProviderKind::YouVersion
+                                                })
+                                            {
+                                                p.app_key = new_key;
+                                                p.enabled = true;
+                                            } else {
+                                                self.providers.providers.push(
+                                                    crate::config::providers::ProviderConfig {
+                                                        kind: crate::config::providers::ProviderKind::YouVersion,
+                                                        app_key: new_key,
+                                                        enabled: true,
+                                                    },
+                                                );
+                                            }
+                                            crate::config::providers::save(&self.providers);
+                                            settings.mode = crate::ui::settings::SettingsMode::View;
+                                            settings.sync_status = Some("✓ API key saved".to_string());
+                                        }
+                                    }
+                                    KeyCode::Esc => {
+                                        settings.mode = crate::ui::settings::SettingsMode::View;
+                                    }
+                                    _ => {}
+                                }
+                            } else {
+                                // View mode shortcuts
+                                match key {
+                                    KeyCode::Char('S') | KeyCode::Char('s') => {
+                                        if self.providers.has_youversion() {
+                                            #[cfg(feature = "api")]
+                                            {
+                                                let api_key = self
+                                                    .providers
+                                                    .youversion_key()
+                                                    .unwrap_or_default()
+                                                    .to_string();
+                                                let client =
+                                                    crate::api::youversion::YouVersionClient::new(api_key);
+                                                match client.get_versions("en") {
+                                                    Ok(versions) => {
+                                                        if let Some(ref cache) = self.cache {
+                                                            cache.store_versions(&versions);
+                                                        }
+                                                        settings.sync_status = Some(format!(
+                                                            "✓ Synced {} translations",
+                                                            versions.len()
+                                                        ));
+                                                    }
+                                                    Err(e) => {
+                                                        settings.sync_status =
+                                                            Some(format!("✗ Sync failed: {e}"));
+                                                    }
+                                                }
+                                            }
+                                            #[cfg(not(feature = "api"))]
+                                            {
+                                                settings.sync_status =
+                                                    Some("API feature not enabled".to_string());
+                                            }
+                                        } else {
+                                            settings.sync_status =
+                                                Some("No API key configured".to_string());
+                                        }
+                                    }
+                                    KeyCode::Char('k') | KeyCode::Char('K') => {
+                                        settings.mode =
+                                            crate::ui::settings::SettingsMode::EditingKey(String::new());
+                                    }
+                                    KeyCode::Esc => {
+                                        close_overlay = true;
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
                         Some(OverlayKind::QuitConfirm) => match key {
                             KeyCode::Char('y') | KeyCode::Enter => {
                                 self.should_quit = true;
@@ -427,11 +555,27 @@ impl App {
                         self.highlight_map = hl::build_map(&self.highlights);
                     }
                     if let Some((book_num, chapter, verse, verse_end)) = jump_target {
-                        state.jump_to_verse(&self.db, book_num, chapter, verse, verse_end);
+                        let mut ctx = ResolveContext {
+                            conn: &self.db,
+                            resolver: &mut self.resolver,
+                            #[cfg(feature = "api")]
+                            cache: self.cache.as_ref(),
+                            #[cfg(feature = "api")]
+                            providers: &self.providers,
+                        };
+                        state.jump_to_verse(&mut ctx, book_num, chapter, verse, verse_end);
                     }
                     if let Some(code) = new_translation {
                         state.translation = code;
-                        state.load_chapter(&self.db);
+                        let mut ctx = ResolveContext {
+                            conn: &self.db,
+                            resolver: &mut self.resolver,
+                            #[cfg(feature = "api")]
+                            cache: self.cache.as_ref(),
+                            #[cfg(feature = "api")]
+                            providers: &self.providers,
+                        };
+                        state.load_chapter(&mut ctx);
                     }
                     if let Some((book, chapter, verse, text)) = save_note {
                         notes::upsert(&mut self.notes, &book, chapter, verse, &text);
@@ -526,11 +670,20 @@ impl App {
                         state.overlay = Some(OverlayKind::Translation(picker));
                     }
                     KeyCode::Char('r') => {
-                        if let Some(verse) = db::get_random_verse(&self.db, &state.translation) {
+                        let db_t = crate::bible::bundled_translation(&state.translation);
+                        if let Some(verse) = db::get_random_verse(&self.db, db_t) {
                             let flash =
                                 format!("→ {} {}:{}", verse.book, verse.chapter, verse.verse);
+                            let mut ctx = ResolveContext {
+                                conn: &self.db,
+                                resolver: &mut self.resolver,
+                                #[cfg(feature = "api")]
+                                cache: self.cache.as_ref(),
+                                #[cfg(feature = "api")]
+                                providers: &self.providers,
+                            };
                             state.jump_to_verse(
-                                &self.db,
+                                &mut ctx,
                                 verse.book_num,
                                 verse.chapter,
                                 verse.verse,
@@ -608,6 +761,11 @@ impl App {
                         }
                         state.overlay = Some(OverlayKind::NotesList(nl_state));
                     }
+                    KeyCode::Char('S') => {
+                        state.overlay = Some(OverlayKind::Settings(
+                            crate::ui::settings::SettingsState::default(),
+                        ));
+                    }
                     KeyCode::Char('j') | KeyCode::Down => {
                         state.move_down();
                     }
@@ -618,7 +776,15 @@ impl App {
                         state.focus_prev();
                     }
                     KeyCode::Char('l') | KeyCode::Right | KeyCode::Enter => {
-                        state.focus_next(&self.db);
+                        let mut ctx = ResolveContext {
+                            conn: &self.db,
+                            resolver: &mut self.resolver,
+                            #[cfg(feature = "api")]
+                            cache: self.cache.as_ref(),
+                            #[cfg(feature = "api")]
+                            providers: &self.providers,
+                        };
+                        state.focus_next(&mut ctx);
                     }
                     KeyCode::Esc if state.mark_start.is_some() => {
                         state.mark_start = None;
@@ -635,7 +801,15 @@ impl App {
             if state.overlay.is_some() {
                 return;
             }
-            state.handle_mouse(mouse, &self.db);
+            let mut ctx = ResolveContext {
+                conn: &self.db,
+                resolver: &mut self.resolver,
+                #[cfg(feature = "api")]
+                cache: self.cache.as_ref(),
+                #[cfg(feature = "api")]
+                providers: &self.providers,
+            };
+            state.handle_mouse(mouse, &mut ctx);
         }
     }
 
@@ -647,6 +821,28 @@ impl App {
                 banner::render_banner(frame, frame.area(), state, &theme);
             }
             AppMode::Browser(ref mut state) => {
+                let has_api_key = self.providers.has_youversion();
+                let masked_key = match self.providers.youversion_key() {
+                    Some(k) if k.len() > 6 => format!("****{}", &k[k.len() - 6..]),
+                    Some(k) => format!("****{k}"),
+                    None => "(not set)".to_string(),
+                };
+
+                #[cfg(feature = "api")]
+                let (cached_translations, cached_count) = {
+                    let cached = self
+                        .cache
+                        .as_ref()
+                        .map(|c| c.get_versions())
+                        .unwrap_or_default();
+                    let abbrevs: Vec<String> =
+                        cached.iter().map(|v| v.abbreviation.clone()).collect();
+                    let count = abbrevs.len();
+                    (abbrevs, count)
+                };
+                #[cfg(not(feature = "api"))]
+                let (cached_translations, cached_count) = (vec![], 0usize);
+
                 browser::render_browser(
                     frame,
                     frame.area(),
@@ -658,6 +854,10 @@ impl App {
                     self.highlights_visible,
                     &self.highlights,
                     &self.notes,
+                    has_api_key,
+                    &cached_translations,
+                    &masked_key,
+                    cached_count,
                 );
             }
         }

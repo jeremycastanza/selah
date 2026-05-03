@@ -24,6 +24,8 @@ pub fn render_translation_picker(
     area: Rect,
     state: &mut TranslationPickerState,
     active_code: &str,
+    has_api_key: bool,
+    cached_translations: &[String],
     theme: &Theme,
 ) {
     // Right-aligned modal: rightmost 50%
@@ -45,19 +47,24 @@ pub fn render_translation_picker(
         .iter()
         .map(|t| {
             let is_active = t.code == active_code;
-            let label = if t.offline {
-                if is_active {
-                    format!("✓ {} — {} ({})", t.code, t.name, t.lang)
-                } else {
-                    format!("  {} — {} ({})", t.code, t.name, t.lang)
-                }
+            let status = if t.offline {
+                "[offline]"
+            } else if cached_translations
+                .iter()
+                .any(|c| c.eq_ignore_ascii_case(t.code))
+            {
+                "[cached]"
+            } else if has_api_key {
+                "[api]"
             } else {
-                format!("  {} — {} ({}) [soon]", t.code, t.name, t.lang)
+                "[no key]"
             };
-            let style = if t.offline {
-                Style::default().fg(theme.text)
-            } else {
+            let prefix = if is_active { "✓" } else { " " };
+            let label = format!("{prefix} {} — {} ({}) {status}", t.code, t.name, t.lang);
+            let style = if !t.offline && !has_api_key {
                 Style::default().fg(theme.text_dim)
+            } else {
+                Style::default().fg(theme.text)
             };
             ListItem::new(label).style(style)
         })

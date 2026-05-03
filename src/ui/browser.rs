@@ -10,6 +10,7 @@ use rusqlite::Connection;
 
 use crate::bible::books::BOOKS;
 use crate::bible::db;
+use crate::bible::resolver::{FetchResult, ResolveContext};
 use crate::bible::types::Chapter;
 use crate::config::bookmarks::BookmarkEntry;
 use crate::config::highlights::{HighlightEntry, HighlightMap};
@@ -21,6 +22,7 @@ use crate::ui::note_list::{NoteListState, render_note_list};
 use crate::ui::notes::{NoteEditorState, render_note_editor};
 use crate::ui::quit_confirm::render_quit_confirm;
 use crate::ui::search::{SearchState, render_search};
+use crate::ui::settings::{SettingsState, render_settings};
 use crate::ui::theme::Theme;
 use crate::ui::translation::{TranslationPickerState, render_translation_picker};
 
@@ -60,6 +62,7 @@ pub enum OverlayKind {
     NoteEditor(NoteEditorState),
     NotesList(NoteListState),
     QuitConfirm,
+    Settings(SettingsState),
 }
 
 pub struct BrowserState {
@@ -81,6 +84,7 @@ pub struct BrowserState {
     pub status_flash: Option<(String, Instant)>,
     pub mark_start: Option<u32>,
     pub selected_verse_end: Option<u32>,
+    pub loading: bool,
 }
 
 impl BrowserState {
@@ -98,9 +102,13 @@ impl BrowserState {
 
         let selected_chapter = (chapter_idx + 1) as u32;
 
+        // Only load from bundled DB on startup; API translations load via resolver
+        let initial_translation =
+            crate::bible::bundled_translation(&session.translation).to_string();
+
         let verses = db::get_chapter(
             conn,
-            &session.translation,
+            &initial_translation,
             (book_idx + 1) as u32,
             selected_chapter,
         );
@@ -142,6 +150,7 @@ impl BrowserState {
             status_flash: None,
             mark_start: None,
             selected_verse_end: None,
+            loading: false,
         }
     }
 
@@ -234,12 +243,12 @@ impl BrowserState {
         }
     }
 
-    pub fn focus_next(&mut self, conn: &Connection) {
+    pub fn focus_next(&mut self, ctx: &mut ResolveContext) {
         let next = self.active_panel.next();
         if next != self.active_panel {
             if next == Panel::Verses || (next == Panel::Scripture && self.current_chapter.is_none())
             {
-                self.load_chapter(conn);
+                self.load_chapter(ctx);
             }
             self.active_panel = next;
         }
@@ -249,17 +258,30 @@ impl BrowserState {
         self.active_panel = self.active_panel.prev();
     }
 
-    pub fn load_chapter(&mut self, conn: &Connection) {
+    pub fn load_chapter(&mut self, ctx: &mut ResolveContext) {
         let book_num = (self.selected_book_idx + 1) as u32;
-        let verses = db::get_chapter(conn, &self.translation, book_num, self.selected_chapter);
-        if verses.is_empty() {
-            self.current_chapter = None;
-        } else {
-            self.current_chapter = Some(Chapter {
-                book: BOOKS[self.selected_book_idx].name.to_string(),
-                chapter: self.selected_chapter,
-                verses,
-            });
+        match ctx.resolve(&self.translation, book_num, self.selected_chapter) {
+            FetchResult::Ready(verses) => {
+                self.loading = false;
+                if verses.is_empty() {
+                    self.current_chapter = None;
+                } else {
+                    self.current_chapter = Some(Chapter {
+                        book: BOOKS[self.selected_book_idx].name.to_string(),
+                        chapter: self.selected_chapter,
+                        verses,
+                    });
+                }
+            }
+            FetchResult::Loading => {
+                self.loading = true;
+                self.current_chapter = None;
+            }
+            FetchResult::Error(msg) => {
+                self.loading = false;
+                self.current_chapter = None;
+                self.status_flash = Some((msg, std::time::Instant::now()));
+            }
         }
         self.verse_list.select(None);
         self.selected_verse = 0;
@@ -268,7 +290,7 @@ impl BrowserState {
 
     pub fn jump_to_verse(
         &mut self,
-        conn: &Connection,
+        ctx: &mut ResolveContext,
         book_num: u32,
         chapter: u32,
         verse: u32,
@@ -279,7 +301,7 @@ impl BrowserState {
         self.book_list.select(Some(self.selected_book_idx));
         self.chapter_list
             .select(Some(chapter.saturating_sub(1) as usize));
-        self.load_chapter(conn); // resets verse_list + selected_verse + scripture_scroll
+        self.load_chapter(ctx); // resets verse_list + selected_verse + scripture_scroll
         if verse > 0 {
             self.verse_list
                 .select(Some(verse.saturating_sub(1) as usize));
@@ -306,7 +328,7 @@ impl BrowserState {
         }
     }
 
-    pub fn handle_mouse(&mut self, mouse: MouseEvent, conn: &Connection) {
+    pub fn handle_mouse(&mut self, mouse: MouseEvent, ctx: &mut ResolveContext) {
         let pos = Position::new(mouse.column, mouse.row);
 
         match mouse.kind {
@@ -331,12 +353,12 @@ impl BrowserState {
                     if idx < max {
                         self.chapter_list.select(Some(idx));
                         self.selected_chapter = (idx + 1) as u32;
-                        self.load_chapter(conn);
+                        self.load_chapter(ctx);
                     }
                 } else if self.verses_rect.contains(pos) {
                     self.active_panel = Panel::Verses;
                     if self.current_chapter.is_none() {
-                        self.load_chapter(conn);
+                        self.load_chapter(ctx);
                     }
                     let verse_count = self
                         .current_chapter
@@ -410,6 +432,10 @@ pub fn render_browser(
     highlights_visible: bool,
     highlights: &[HighlightEntry],
     notes: &[NoteEntry],
+    has_api_key: bool,
+    cached_translations: &[String],
+    masked_key: &str,
+    cached_count: usize,
 ) {
     let [browser_area, status_area] =
         Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).areas(area);
@@ -494,55 +520,62 @@ pub fn render_browser(
 
     // Scripture panel
     let scripture_block = panel_block("Scripture", state.active_panel == Panel::Scripture, theme);
-    let scripture_lines: Vec<Line> = state
-        .current_chapter
-        .as_ref()
-        .map(|ch| {
-            let verses: &[_] = if let (Some(start), Some(end)) =
-                (state.verse_list.selected(), state.selected_verse_end)
-            {
-                let end_idx = (end as usize).min(ch.verses.len());
-                &ch.verses[start..end_idx]
-            } else if let Some(idx) = state.verse_list.selected() {
-                ch.verses.get(idx).map(std::slice::from_ref).unwrap_or(&[])
-            } else {
-                &ch.verses
-            };
-            verses
-                .iter()
-                .map(|v| {
-                    let highlight_bg = if highlights_visible {
-                        highlight_map
-                            .get(&(ch.book.clone(), ch.chapter, v.verse))
-                            .map(|color| theme.verse_highlight_bg(*color))
-                    } else {
-                        None
-                    };
-                    let text_style = match highlight_bg {
-                        Some(bg) => Style::default().fg(theme.text).bg(bg),
-                        None => Style::default().fg(theme.text),
-                    };
-                    let has_note = notes.iter().any(|n| {
-                        n.book == ch.book && n.chapter == ch.chapter && n.verse == v.verse
-                    });
-                    let verse_label = if has_note {
-                        format!("{}* ", v.verse)
-                    } else {
-                        format!("{}  ", v.verse)
-                    };
-                    Line::from(vec![
-                        Span::styled(
-                            verse_label,
-                            Style::default()
-                                .fg(theme.text_dim)
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                        Span::styled(v.text.as_str(), text_style),
-                    ])
-                })
-                .collect()
-        })
-        .unwrap_or_default();
+    let scripture_lines: Vec<Line> = if state.loading && state.current_chapter.is_none() {
+        vec![Line::from(Span::styled(
+            "  Loading...",
+            Style::default().fg(theme.text_dim),
+        ))]
+    } else {
+        state
+            .current_chapter
+            .as_ref()
+            .map(|ch| {
+                let verses: &[_] = if let (Some(start), Some(end)) =
+                    (state.verse_list.selected(), state.selected_verse_end)
+                {
+                    let end_idx = (end as usize).min(ch.verses.len());
+                    &ch.verses[start..end_idx]
+                } else if let Some(idx) = state.verse_list.selected() {
+                    ch.verses.get(idx).map(std::slice::from_ref).unwrap_or(&[])
+                } else {
+                    &ch.verses
+                };
+                verses
+                    .iter()
+                    .map(|v| {
+                        let highlight_bg = if highlights_visible {
+                            highlight_map
+                                .get(&(ch.book.clone(), ch.chapter, v.verse))
+                                .map(|color| theme.verse_highlight_bg(*color))
+                        } else {
+                            None
+                        };
+                        let text_style = match highlight_bg {
+                            Some(bg) => Style::default().fg(theme.text).bg(bg),
+                            None => Style::default().fg(theme.text),
+                        };
+                        let has_note = notes.iter().any(|n| {
+                            n.book == ch.book && n.chapter == ch.chapter && n.verse == v.verse
+                        });
+                        let verse_label = if has_note {
+                            format!("{}* ", v.verse)
+                        } else {
+                            format!("{}  ", v.verse)
+                        };
+                        Line::from(vec![
+                            Span::styled(
+                                verse_label,
+                                Style::default()
+                                    .fg(theme.text_dim)
+                                    .add_modifier(Modifier::BOLD),
+                            ),
+                            Span::styled(v.text.as_str(), text_style),
+                        ])
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
     let scripture = Paragraph::new(scripture_lines)
         .block(scripture_block)
         .wrap(Wrap { trim: false })
@@ -562,7 +595,7 @@ pub fn render_browser(
     let status_left = if let Some((ref msg, _)) = state.status_flash {
         msg.clone()
     } else {
-        "q: quit | /: search | b: bookmark | H: highlight | n: note | r: random | ?: splash"
+        "q: quit | /: search | b: bookmark | H: highlight | n: note | r: random | S: settings | ?: splash"
             .to_string()
     };
 
@@ -577,12 +610,23 @@ pub fn render_browser(
             OverlayKind::Search(s) => render_search(frame, area, s, theme),
             OverlayKind::Bookmarks(b) => render_bookmarks(frame, area, b, bookmarks, theme),
             OverlayKind::Translation(t) => {
-                render_translation_picker(frame, area, t, &state.translation, theme)
+                render_translation_picker(
+                    frame,
+                    area,
+                    t,
+                    &state.translation,
+                    has_api_key,
+                    cached_translations,
+                    theme,
+                )
             }
             OverlayKind::Highlights(h) => render_highlight_list(frame, area, h, highlights, theme),
             OverlayKind::NoteEditor(n) => render_note_editor(frame, area, n, theme),
             OverlayKind::NotesList(n) => render_note_list(frame, area, n, notes, theme),
             OverlayKind::QuitConfirm => render_quit_confirm(frame, area, theme),
+            OverlayKind::Settings(s) => {
+                render_settings(frame, area, s, has_api_key, masked_key, cached_count, theme)
+            }
         }
     }
 }
@@ -644,9 +688,18 @@ mod tests {
         let conn = crate::bible::db::open_db();
         let session = SessionState::default();
         let mut state = BrowserState::new(&conn, &session);
+        let mut resolver = crate::bible::resolver::ChapterResolver::new();
 
         state.active_panel = Panel::Verses;
-        state.load_chapter(&conn);
+        let mut ctx = ResolveContext {
+            conn: &conn,
+            resolver: &mut resolver,
+            #[cfg(feature = "api")]
+            cache: None,
+            #[cfg(feature = "api")]
+            providers: &crate::config::providers::ProvidersConfig::default(),
+        };
+        state.load_chapter(&mut ctx);
         state.verse_list.select(Some(0));
         state.selected_verse = 1;
 
@@ -661,11 +714,20 @@ mod tests {
         let conn = crate::bible::db::open_db();
         let session = SessionState::default();
         let mut state = BrowserState::new(&conn, &session);
+        let mut resolver = crate::bible::resolver::ChapterResolver::new();
 
         state.active_panel = Panel::Chapters;
         state.current_chapter = None;
 
-        state.focus_next(&conn);
+        let mut ctx = ResolveContext {
+            conn: &conn,
+            resolver: &mut resolver,
+            #[cfg(feature = "api")]
+            cache: None,
+            #[cfg(feature = "api")]
+            providers: &crate::config::providers::ProvidersConfig::default(),
+        };
+        state.focus_next(&mut ctx);
         assert_eq!(state.active_panel, Panel::Verses);
         assert!(state.current_chapter.is_some());
     }
@@ -675,11 +737,20 @@ mod tests {
         let conn = crate::bible::db::open_db();
         let session = SessionState::default();
         let mut state = BrowserState::new(&conn, &session);
+        let mut resolver = crate::bible::resolver::ChapterResolver::new();
 
         state.active_panel = Panel::Verses;
         state.current_chapter = None;
 
-        state.focus_next(&conn);
+        let mut ctx = ResolveContext {
+            conn: &conn,
+            resolver: &mut resolver,
+            #[cfg(feature = "api")]
+            cache: None,
+            #[cfg(feature = "api")]
+            providers: &crate::config::providers::ProvidersConfig::default(),
+        };
+        state.focus_next(&mut ctx);
         assert_eq!(state.active_panel, Panel::Scripture);
         assert!(state.current_chapter.is_some());
     }

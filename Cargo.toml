@@ -20,8 +20,11 @@ clap = { version = "4", features = ["derive"] }
 directories = "6"
 rand = "0.9"
 unicode-width = "0.2"
+ureq = { version = "3", optional = true, features = ["json"] }
 
 [features]
+default = []
+api = ["ureq"]
 extra-translations = []
 
 [profile.release]

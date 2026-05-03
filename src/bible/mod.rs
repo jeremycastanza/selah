@@ -1,6 +1,7 @@
 pub mod books;
 pub mod db;
 pub mod random;
+pub mod resolver;
 pub mod types;
 
 pub struct TranslationInfo {
@@ -10,13 +11,30 @@ pub struct TranslationInfo {
     pub offline: bool,
 }
 
+/// Return the translation code to use for bundled DB queries.
+/// If the given translation is bundled (offline), return it as-is;
+/// otherwise fall back to "KJV".
+pub fn bundled_translation(code: &str) -> &str {
+    let is_bundled = TRANSLATIONS
+        .iter()
+        .any(|t| t.code.eq_ignore_ascii_case(code) && t.offline);
+    if is_bundled { code } else { "KJV" }
+}
+
 pub const TRANSLATIONS: &[TranslationInfo] = &[
-    // English
+    // Bundled
     TranslationInfo {
         code: "KJV",
         name: "King James Version",
         lang: "English",
         offline: true,
+    },
+    // YouVersion API — English translations (synced via Settings)
+    TranslationInfo {
+        code: "AMP",
+        name: "Amplified Bible",
+        lang: "English",
+        offline: false,
     },
     TranslationInfo {
         code: "ASV",
@@ -25,80 +43,111 @@ pub const TRANSLATIONS: &[TranslationInfo] = &[
         offline: false,
     },
     TranslationInfo {
-        code: "BBE",
-        name: "Bible in Basic English",
+        code: "BSB",
+        name: "Berean Standard Bible",
         lang: "English",
         offline: false,
     },
     TranslationInfo {
-        code: "DARBY",
-        name: "Darby Translation",
+        code: "CPDV",
+        name: "Catholic Public Domain Version",
         lang: "English",
         offline: false,
     },
     TranslationInfo {
-        code: "YLT",
-        name: "Young's Literal Translation",
+        code: "EASY",
+        name: "EasyEnglish Bible 2024",
         lang: "English",
         offline: false,
     },
     TranslationInfo {
-        code: "WEB",
+        code: "FBV",
+        name: "Free Bible Version",
+        lang: "English",
+        offline: false,
+    },
+    TranslationInfo {
+        code: "LSV",
+        name: "Literal Standard Version",
+        lang: "English",
+        offline: false,
+    },
+    TranslationInfo {
+        code: "NASB1995",
+        name: "New American Standard Bible 1995",
+        lang: "English",
+        offline: false,
+    },
+    TranslationInfo {
+        code: "NASB2020",
+        name: "New American Standard Bible 2020",
+        lang: "English",
+        offline: false,
+    },
+    TranslationInfo {
+        code: "NIV11",
+        name: "New International Version",
+        lang: "English",
+        offline: false,
+    },
+    TranslationInfo {
+        code: "NIrV",
+        name: "New International Reader's Version",
+        lang: "English",
+        offline: false,
+    },
+    TranslationInfo {
+        code: "NIVUK11",
+        name: "New International Version (Anglicised)",
+        lang: "English",
+        offline: false,
+    },
+    TranslationInfo {
+        code: "PEV",
+        name: "Plain English Version",
+        lang: "English",
+        offline: false,
+    },
+    TranslationInfo {
+        code: "TCENT",
+        name: "Text-Critical English New Testament",
+        lang: "English",
+        offline: false,
+    },
+    TranslationInfo {
+        code: "TOJB2011",
+        name: "The Orthodox Jewish Bible",
+        lang: "English",
+        offline: false,
+    },
+    TranslationInfo {
+        code: "TPT",
+        name: "The Passion Translation",
+        lang: "English",
+        offline: false,
+    },
+    TranslationInfo {
+        code: "WMB",
+        name: "World Messianic Bible",
+        lang: "English",
+        offline: false,
+    },
+    TranslationInfo {
+        code: "WMBBE",
+        name: "World Messianic Bible British Edition",
+        lang: "English",
+        offline: false,
+    },
+    TranslationInfo {
+        code: "engWEBUS",
         name: "World English Bible",
         lang: "English",
         offline: false,
     },
     TranslationInfo {
-        code: "DRC",
-        name: "Douay-Rheims Catholic Bible",
+        code: "enggnv",
+        name: "Geneva Bible",
         lang: "English",
-        offline: false,
-    },
-    // Spanish
-    TranslationInfo {
-        code: "RVR",
-        name: "Reina-Valera 1960",
-        lang: "Español",
-        offline: false,
-    },
-    TranslationInfo {
-        code: "NVI",
-        name: "Nueva Versión Internacional",
-        lang: "Español",
-        offline: false,
-    },
-    // French
-    TranslationInfo {
-        code: "LSG",
-        name: "Louis Segond 1910",
-        lang: "Français",
-        offline: false,
-    },
-    TranslationInfo {
-        code: "NEG",
-        name: "Nouvelle Edition de Genève",
-        lang: "Français",
-        offline: false,
-    },
-    // German
-    TranslationInfo {
-        code: "LUTH",
-        name: "Luther Bibel 1912",
-        lang: "Deutsch",
-        offline: false,
-    },
-    // Portuguese
-    TranslationInfo {
-        code: "ARA",
-        name: "Almeida Revista e Atualizada",
-        lang: "Português",
-        offline: false,
-    },
-    // Latin
-    TranslationInfo {
-        code: "VULG",
-        name: "Vulgata Clementina",
-        lang: "Latin",
         offline: false,
     },
 ];

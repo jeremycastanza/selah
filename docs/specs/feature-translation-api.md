@@ -51,7 +51,7 @@ pub struct ApiConfig {
 }
 ```
 
-Loaded from `~/.config/selah/api.toml` or `SELAH_API_KEY` environment variable. The config file is separate from session/bookmarks to avoid accidental sharing.
+Loaded from `providers.json` in the app data directory (`data_dir()` via `directories` crate) or `SELAH_API_KEY` environment variable. The config file is separate from session/bookmarks to avoid accidental sharing.
 
 ### Provider Abstraction
 
