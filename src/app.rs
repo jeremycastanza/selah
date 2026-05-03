@@ -20,6 +20,7 @@ use crate::config::session::{self, SessionState};
 use crate::ui::banner::{self, BannerState};
 use crate::ui::bookmarks::BookmarkListState;
 use crate::ui::browser::{self, BrowserState, OverlayKind};
+use crate::ui::help::HelpState;
 use crate::ui::highlight_list::HighlightListState;
 use crate::ui::note_list::NoteListState;
 use crate::ui::notes::NoteEditorState;
@@ -443,12 +444,16 @@ impl App {
                         },
                         Some(OverlayKind::Settings(ref mut settings)) => {
                             // When editing a key, capture all input first
-                            if let crate::ui::settings::SettingsMode::EditingKey(ref mut input) = settings.mode {
+                            if let crate::ui::settings::SettingsMode::EditingKey(ref mut input) =
+                                settings.mode
+                            {
                                 match key {
                                     KeyCode::Char(c) => {
                                         input.push(c);
                                     }
-                                    KeyCode::Backspace => { input.pop(); }
+                                    KeyCode::Backspace => {
+                                        input.pop();
+                                    }
                                     KeyCode::Enter => {
                                         if !input.is_empty() {
                                             let new_key = input.clone();
@@ -470,7 +475,8 @@ impl App {
                                             }
                                             crate::config::providers::save(&self.providers);
                                             settings.mode = crate::ui::settings::SettingsMode::View;
-                                            settings.sync_status = Some("✓ API key saved".to_string());
+                                            settings.sync_status =
+                                                Some("✓ API key saved".to_string());
                                         }
                                     }
                                     KeyCode::Esc => {
@@ -491,7 +497,9 @@ impl App {
                                                     .unwrap_or_default()
                                                     .to_string();
                                                 let client =
-                                                    crate::api::youversion::YouVersionClient::new(api_key);
+                                                    crate::api::youversion::YouVersionClient::new(
+                                                        api_key,
+                                                    );
                                                 match client.get_versions("en") {
                                                     Ok(versions) => {
                                                         if let Some(ref cache) = self.cache {
@@ -520,7 +528,9 @@ impl App {
                                     }
                                     KeyCode::Char('k') | KeyCode::Char('K') => {
                                         settings.mode =
-                                            crate::ui::settings::SettingsMode::EditingKey(String::new());
+                                            crate::ui::settings::SettingsMode::EditingKey(
+                                                String::new(),
+                                            );
                                     }
                                     KeyCode::Esc => {
                                         close_overlay = true;
@@ -529,6 +539,26 @@ impl App {
                                 }
                             }
                         }
+                        Some(OverlayKind::Help(ref mut help)) => match key {
+                            KeyCode::Char('j') | KeyCode::Down => {
+                                help.scroll = help.scroll.saturating_add(1);
+                            }
+                            KeyCode::Char('k') | KeyCode::Up => {
+                                help.scroll = help.scroll.saturating_sub(1);
+                            }
+                            KeyCode::Tab | KeyCode::Char('l') | KeyCode::Right => {
+                                help.active_tab = (help.active_tab + 1) % 4;
+                                help.scroll = 0;
+                            }
+                            KeyCode::BackTab | KeyCode::Char('h') | KeyCode::Left => {
+                                help.active_tab = help.active_tab.checked_sub(1).unwrap_or(3);
+                                help.scroll = 0;
+                            }
+                            KeyCode::Esc | KeyCode::Char('?') => {
+                                close_overlay = true;
+                            }
+                            _ => {}
+                        },
                         Some(OverlayKind::QuitConfirm) => match key {
                             KeyCode::Char('y') | KeyCode::Enter => {
                                 self.should_quit = true;
@@ -594,7 +624,7 @@ impl App {
                         self.theme_name = self.theme_name.next();
                     }
                     KeyCode::Char('?') => {
-                        self.mode = AppMode::Banner(BannerState::new());
+                        state.overlay = Some(OverlayKind::Help(HelpState::default()));
                     }
                     KeyCode::Char('/') => {
                         state.overlay = Some(OverlayKind::Search(SearchState::default()));
@@ -798,9 +828,36 @@ impl App {
 
     fn handle_mouse(&mut self, mouse: crossterm::event::MouseEvent) {
         if let AppMode::Browser(ref mut state) = self.mode {
+            // Help overlay tab clicks
+            if let Some(OverlayKind::Help(ref mut help)) = state.overlay {
+                if matches!(mouse.kind, crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left))
+                    && help.tab_bar_rect.contains(ratatui::layout::Position::new(mouse.column, mouse.row))
+                    && let Some(tab) = help.tab_at_col(mouse.column)
+                {
+                    help.active_tab = tab;
+                    help.scroll = 0;
+                }
+                return;
+            }
+
             if state.overlay.is_some() {
                 return;
             }
+
+            // Status bar click handling
+            if matches!(mouse.kind, crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left))
+                && state.status_rect.contains(ratatui::layout::Position::new(mouse.column, mouse.row))
+            {
+                if mouse.column < state.status_menu_end {
+                    state.overlay = Some(OverlayKind::Help(HelpState::default()));
+                } else if mouse.column < state.status_translation_end {
+                    state.overlay = Some(OverlayKind::Translation(TranslationPickerState::default()));
+                } else {
+                    self.theme_name = self.theme_name.next();
+                }
+                return;
+            }
+
             let mut ctx = ResolveContext {
                 conn: &self.db,
                 resolver: &mut self.resolver,

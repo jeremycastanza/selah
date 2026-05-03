@@ -17,6 +17,7 @@ use crate::config::highlights::{HighlightEntry, HighlightMap};
 use crate::config::notes::NoteEntry;
 use crate::config::session::SessionState;
 use crate::ui::bookmarks::{BookmarkListState, render_bookmarks};
+use crate::ui::help::{HelpState, render_help};
 use crate::ui::highlight_list::{HighlightListState, render_highlight_list};
 use crate::ui::note_list::{NoteListState, render_note_list};
 use crate::ui::notes::{NoteEditorState, render_note_editor};
@@ -63,6 +64,7 @@ pub enum OverlayKind {
     NotesList(NoteListState),
     QuitConfirm,
     Settings(SettingsState),
+    Help(HelpState),
 }
 
 pub struct BrowserState {
@@ -81,6 +83,9 @@ pub struct BrowserState {
     pub chapters_rect: Rect,
     pub verses_rect: Rect,
     pub scripture_rect: Rect,
+    pub status_rect: Rect,
+    pub status_menu_end: u16,
+    pub status_translation_end: u16,
     pub status_flash: Option<(String, Instant)>,
     pub mark_start: Option<u32>,
     pub selected_verse_end: Option<u32>,
@@ -147,6 +152,9 @@ impl BrowserState {
             chapters_rect: Rect::default(),
             verses_rect: Rect::default(),
             scripture_rect: Rect::default(),
+            status_rect: Rect::default(),
+            status_menu_end: 0,
+            status_translation_end: 0,
             status_flash: None,
             mark_start: None,
             selected_verse_end: None,
@@ -595,11 +603,22 @@ pub fn render_browser(
     let status_left = if let Some((ref msg, _)) = state.status_flash {
         msg.clone()
     } else {
-        "q: quit | /: search | b: bookmark | H: highlight | n: note | r: random | S: settings | ?: splash"
-            .to_string()
+        "? Menu".to_string()
     };
 
     let status_text = format!(" {} │ {} │ {}", status_left, state.translation, theme_label,);
+
+    // Track click regions: " ? Menu │ KJV │ Dark"
+    //                       ^menu    ^trans ^theme
+    let menu_len = (1 + status_left.len()) as u16; // leading space + text
+    let sep1 = 3u16; // " │ "
+    let trans_len = state.translation.len() as u16;
+    let sep2 = 3u16;
+    state.status_rect = status_area;
+    state.status_menu_end = status_area.x + menu_len;
+    state.status_translation_end = state.status_menu_end + sep1 + trans_len;
+    let _theme_end = state.status_translation_end + sep2 + theme_label.len() as u16;
+
     let status =
         Paragraph::new(status_text).style(Style::default().fg(theme.text).bg(theme.surface));
     frame.render_widget(status, status_area);
@@ -609,17 +628,15 @@ pub fn render_browser(
         match overlay {
             OverlayKind::Search(s) => render_search(frame, area, s, theme),
             OverlayKind::Bookmarks(b) => render_bookmarks(frame, area, b, bookmarks, theme),
-            OverlayKind::Translation(t) => {
-                render_translation_picker(
-                    frame,
-                    area,
-                    t,
-                    &state.translation,
-                    has_api_key,
-                    cached_translations,
-                    theme,
-                )
-            }
+            OverlayKind::Translation(t) => render_translation_picker(
+                frame,
+                area,
+                t,
+                &state.translation,
+                has_api_key,
+                cached_translations,
+                theme,
+            ),
             OverlayKind::Highlights(h) => render_highlight_list(frame, area, h, highlights, theme),
             OverlayKind::NoteEditor(n) => render_note_editor(frame, area, n, theme),
             OverlayKind::NotesList(n) => render_note_list(frame, area, n, notes, theme),
@@ -627,6 +644,7 @@ pub fn render_browser(
             OverlayKind::Settings(s) => {
                 render_settings(frame, area, s, has_api_key, masked_key, cached_count, theme)
             }
+            OverlayKind::Help(h) => render_help(frame, area, h, theme),
         }
     }
 }
