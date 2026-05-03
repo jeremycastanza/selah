@@ -64,7 +64,7 @@ pub fn get_chapter(
         Ok(s) => s,
         Err(_) => return get_chapter_from_cache(translation, book_num, chapter),
     };
-    stmt.query_map(rusqlite::params![book_num, chapter], |row| {
+    match stmt.query_map(rusqlite::params![book_num, chapter], |row| {
         let b: u32 = row.get(0)?;
         Ok(Verse {
             book: book_name(b).to_string(),
@@ -76,7 +76,7 @@ pub fn get_chapter(
         })
     }) {
         Ok(rows) => rows.filter_map(|r| r.ok()).collect(),
-        Err(_) => vec![],
+        Err(_) => get_chapter_from_cache(translation, book_num, chapter),
     }
 }
 
