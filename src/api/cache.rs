@@ -220,9 +220,7 @@ impl CacheDb {
 
     /// Purge all cached verses so they can be re-fetched with correct parsing.
     pub fn purge_verses(&self) {
-        let _ = self
-            .conn
-            .execute("DELETE FROM cached_verses", params![]);
+        let _ = self.conn.execute("DELETE FROM cached_verses", params![]);
     }
 }
 

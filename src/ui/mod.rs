@@ -1,6 +1,7 @@
 pub mod banner;
 pub mod bookmarks;
 pub mod browser;
+pub mod help;
 pub mod highlight_list;
 pub mod note_list;
 pub mod notes;

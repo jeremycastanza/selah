@@ -3,3 +3,17 @@ data/extra.sqlite
 *.swp
 *.swo
 .DS_Store
+
+# Secrets & credentials
+.env
+.env.*
+*.pem
+*.key
+*.p12
+
+# Databases (data/kjv.sqlite is intentionally tracked)
+*.db
+
+# Audit artifacts
+gitleaks-report.json
+SECRET_AUDIT.md

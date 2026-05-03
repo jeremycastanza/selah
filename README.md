@@ -1,5 +1,8 @@
 # selah
 
+[![CI](https://github.com/jeremycastanza/selah/actions/workflows/release.yml/badge.svg)](https://github.com/jeremycastanza/selah/actions/workflows/release.yml)
+[![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
+
 A terminal-based Bible reader. Offline-first, keyboard-driven, fast.
 
 ## Features
@@ -17,19 +20,17 @@ A terminal-based Bible reader. Offline-first, keyboard-driven, fast.
 
 ## Installation
 
-### Homebrew (private tap)
-
-Requires a GitHub PAT with read access to the tap repo. Set `HOMEBREW_GITHUB_API_TOKEN` in your shell, then:
+### Homebrew
 
 ```bash
-brew tap jeremycastanza/selah-tap git@github-personal:jeremycastanza/homebrew-selah-tap.git
+brew tap jeremycastanza/selah
 brew install selah
 ```
 
 ### Shell installer
 
 ```bash
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/jeremycastanza/selah/releases/download/v0.1.0/selah-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/jeremycastanza/selah/releases/latest/download/selah-installer.sh | sh
 ```
 
 ### Build from source
@@ -61,7 +62,7 @@ selah --no-banner  # skip the splash screen
 | `v` | Open translation picker |
 | `t` | Cycle theme |
 | `r` | Random verse |
-| `?` | Replay splash screen |
+| `?` | Open help menu |
 | `q` (twice) | Quit |
 
 ## Platform Support
@@ -83,7 +84,7 @@ selah --no-banner  # skip the splash screen
 | Data | SQLite via [rusqlite](https://github.com/rusqlite/rusqlite) (bundled) |
 | Bible data | [scrollmapper/bible_databases](https://github.com/scrollmapper/bible_databases) (MIT) |
 | CLI | [clap](https://github.com/clap-rs/clap) |
-| Distribution | [cargo-dist](https://github.com/axodotdev/cargo-dist) + private Homebrew tap |
+| Distribution | [cargo-dist](https://github.com/axodotdev/cargo-dist) + Homebrew tap |
 
 ## Docs
 
@@ -93,4 +94,4 @@ selah --no-banner  # skip the splash screen
 
 ## License
 
-MIT
+GPL-3.0
