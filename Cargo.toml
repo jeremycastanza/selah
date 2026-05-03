@@ -23,7 +23,7 @@ unicode-width = "0.2"
 ureq = { version = "3", optional = true, features = ["json"] }
 
 [features]
-default = []
+default = ["api"]
 api = ["ureq"]
 extra-translations = []
 
