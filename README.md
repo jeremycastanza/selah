@@ -11,7 +11,11 @@ A terminal-based Bible reader. Offline-first, keyboard-driven, fast.
 - **Keyboard + mouse navigation** — Vim-style (`h/j/k/l`) keys and mouse click/scroll
 - **Full-text search** — FTS5-powered search with BM25 ranking via `/` key
 - **Bookmarks** — Save and navigate to bookmarked verses (`b`/`B`)
+- **Highlights** — Color-highlight verses with toggle visibility (`H`/`g`/`G`)
+- **Notes** — Attach notes to any verse with a multi-line editor (`n`/`N`)
 - **5 themes** — Slate, Midnight, Parchment, Gospel, Terminal — cycle with `t`
+- **Help menu** — Tabbed overlay with full keybinding reference (`?`)
+- **Multiple translations** — KJV bundled offline; additional translations via YouVersion API
 - **Animated splash screen** — Ichthys ASCII art with fade-in animation
 - **Random verse** — `r` in the TUI or `selah random` from the CLI
 - **Session persistence** — Reading position, theme, and translation restored on relaunch
@@ -58,12 +62,19 @@ selah --no-banner  # skip the splash screen
 | `Enter` | Select / confirm |
 | `/` | Open search |
 | `b` | Bookmark current verse |
-| `B` | Open bookmarks |
+| `B` | Open bookmarks list |
+| `H` | Highlight current verse |
+| `g` | Toggle highlight visibility |
+| `G` | Open highlights list |
+| `n` | Add/edit note on current verse |
+| `N` | Open notes list |
 | `v` | Open translation picker |
 | `t` | Cycle theme |
 | `r` | Random verse |
+| `S` | Open settings |
 | `?` | Open help menu |
-| `q` (twice) | Quit |
+| `q` | Quit (with confirmation) |
+| `Esc` | Close overlay |
 
 ## Platform Support
 

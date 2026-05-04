@@ -1,10 +1,10 @@
 # Architecture
 
-_Last updated: 2026-04-08_
+_Last updated: 2026-05-04_
 
 ## Overview
 
-Selah is a fully offline terminal Bible reader written in Rust. It embeds the KJV Bible as a SQLite database compiled into the binary, renders a 4-panel TUI via ratatui/crossterm, and persists the user's reading position between sessions.
+Selah is a terminal Bible reader written in Rust. It embeds the KJV Bible as a SQLite database compiled into the binary, supports additional translations via the YouVersion Platform API, renders a 4-panel TUI via ratatui/crossterm, and persists the user's reading position between sessions.
 
 ## System Design
 
@@ -123,6 +123,12 @@ selah/
 │   │   ├── browser.rs
 │   │   ├── search.rs
 │   │   ├── bookmarks.rs
+│   │   ├── help.rs
+│   │   ├── highlight_list.rs
+│   │   ├── notes.rs
+│   │   ├── note_list.rs
+│   │   ├── settings.rs
+│   │   ├── quit_confirm.rs
 │   │   ├── translation.rs
 │   │   └── theme.rs
 │   ├── bible/
@@ -130,11 +136,15 @@ selah/
 │   │   ├── db.rs
 │   │   ├── books.rs
 │   │   ├── types.rs
+│   │   ├── resolver.rs
 │   │   └── random.rs
 │   └── config/
 │       ├── mod.rs
 │       ├── session.rs
-│       └── bookmarks.rs
+│       ├── bookmarks.rs
+│       ├── highlights.rs
+│       ├── notes.rs
+│       └── providers.rs
 ├── data/
 │   └── kjv.sqlite
 ├── docs/
@@ -157,4 +167,4 @@ selah/
 
 - `docs/technical/` — Domain-specific reference
 - `docs/decisions.md` — Architecture Decision Records
-- `docs/plans/v0.1.0-implementation.md` — Phased build plan
+- `docs/plans/v0.4.0-implementation.md` — Current release plan
