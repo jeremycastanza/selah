@@ -1,6 +1,6 @@
 # Project Context
 
-_Last updated: 2026-04-08_
+_Last updated: 2026-05-04_
 _Target: ~200 lines_
 
 ## What This Is
@@ -14,13 +14,19 @@ selah/
 ├── src/
 │   ├── main.rs           # Entry point; CLI dispatch (clap)
 │   ├── app.rs            # Application state machine and event loop
-│   ├── cli.rs            # clap CLI (Commands::Random)
+│   ├── cli.rs            # clap CLI (Commands::Random, --version)
 │   ├── ui/               # TUI rendering and layout
 │   │   ├── mod.rs
 │   │   ├── banner.rs     # BannerState — animated splash screen (Ichthys art + SELAH title)
 │   │   ├── browser.rs    # BrowserState, Panel, OverlayKind, render_browser, hit_test
 │   │   ├── search.rs     # SearchState, render_search
 │   │   ├── bookmarks.rs  # BookmarkListState, render_bookmarks (modal overlay)
+│   │   ├── help.rs       # HelpState, render_help — tabbed menu overlay (4 tabs)
+│   │   ├── highlight_list.rs # HighlightListState, render_highlight_list (modal overlay)
+│   │   ├── notes.rs      # NoteEditorState, render_note_editor (modal overlay)
+│   │   ├── note_list.rs  # NoteListState, render_note_list (modal overlay)
+│   │   ├── settings.rs   # SettingsState, render_settings (modal overlay)
+│   │   ├── quit_confirm.rs # render_quit_confirm (modal overlay)
 │   │   ├── translation.rs# TranslationPickerState, render_translation_picker (modal overlay)
 │   │   └── theme.rs      # Theme, ThemeName (5 themes), get_theme, interpolate_color
 │   ├── bible/            # Bible data models and DB access
@@ -28,11 +34,15 @@ selah/
 │   │   ├── db.rs         # open_db, get_chapter, get_verse, search, get_random_verse
 │   │   ├── books.rs      # BOOKS array (66 books), book_name()
 │   │   ├── types.rs      # Verse, Chapter, SearchResult
+│   │   ├── resolver.rs   # Unified translation resolver (bundled → cache → API)
 │   │   └── random.rs     # thin wrapper over db::get_random_verse
-│   └── config/           # Session and bookmark persistence
+│   └── config/           # Session, bookmarks, highlights, notes, providers
 │       ├── mod.rs
 │       ├── session.rs    # SessionState, load(), save()
-│       └── bookmarks.rs  # BookmarkEntry, load(), save(), add(), remove(), now_unix()
+│       ├── bookmarks.rs  # BookmarkEntry, load(), save(), add(), remove()
+│       ├── highlights.rs # HighlightEntry, load(), save(), build_map()
+│       ├── notes.rs      # NoteEntry, upsert(), remove(), load(), save()
+│       └── providers.rs  # ProviderConfig — YVP API key persistence (TOML + env fallback)
 ├── data/
 │   └── kjv.sqlite        # KJV Bible database (embedded via include_bytes!)
 ├── tests/                # Integration tests
@@ -43,7 +53,8 @@ selah/
 │   ├── specs/            # Feature specifications
 │   └── technical/        # Domain reference docs
 ├── Cargo.toml            # Package manifest
-└── Cargo.lock            # Dependency lock file
+├── Cargo.lock            # Dependency lock file
+└── dist-workspace.toml   # cargo-dist configuration
 ```
 
 ## Key Patterns
@@ -66,11 +77,17 @@ The full-text search index is built at runtime from the verses table — it is n
 
 ### Overlay System
 
-Three modal overlays share a single `OverlayKind` enum in `BrowserState`. Only one can be active at a time. Key events are intercepted entirely by the active overlay; mouse is ignored while an overlay is open.
+Eight modal overlays share a single `OverlayKind` enum in `BrowserState`. Only one can be active at a time. Key events are intercepted entirely by the active overlay.
 
 - `OverlayKind::Search(SearchState)` — `/` key, FTS5 search
 - `OverlayKind::Bookmarks(BookmarkListState)` — `B` key, saved verse list
 - `OverlayKind::Translation(TranslationPickerState)` — `v` key, Bible version picker
+- `OverlayKind::Help(HelpState)` — `?` key, tabbed menu with keybinding reference
+- `OverlayKind::HighlightList(HighlightListState)` — `G` key, highlight list
+- `OverlayKind::NoteEditor(NoteEditorState)` — `n` key, create/edit note
+- `OverlayKind::NoteList(NoteListState)` — `N` key, saved notes list
+- `OverlayKind::Settings(SettingsState)` — `S` key, app settings
+- `OverlayKind::QuitConfirm` — `q` key, quit confirmation
 
 ### Splash Screen Animation
 
@@ -96,7 +113,7 @@ Any keypress skips directly to browser. `?` in browser replays the splash.
 | Data | SQLite via rusqlite (`bundled`), sourced from scrollmapper/bible_databases |
 | CLI | clap |
 | Session storage | serde_json + directories crate |
-| Distribution | cargo-dist + private Homebrew tap (`jeremycastanza/homebrew-selah-tap`) |
+| Distribution | cargo-dist + Homebrew tap (`jeremycastanza/homebrew-selah`) |
 
 ## Critical Files
 

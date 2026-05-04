@@ -21,4 +21,4 @@ allow-dirty = ["ci"]
 # Homebrew tap
 [dist.homebrew]
 tap = "jeremycastanza/homebrew-selah"
-publish = false
+publish = true
