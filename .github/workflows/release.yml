@@ -280,107 +280,36 @@ jobs:
 
           gh release create "${{ needs.plan.outputs.tag }}" --target "$RELEASE_COMMIT" $PRERELEASE_FLAG --title "$ANNOUNCEMENT_TITLE" --notes-file "$RUNNER_TEMP/notes.txt" artifacts/*
 
-  # Publish binaries and formula to the Homebrew tap repo so collaborators
-  # can install without access to the private source repo.
-  publish-tap:
+  # Publish Homebrew formula to the tap repo
+  publish-homebrew:
     needs:
       - plan
       - host
     if: ${{ always() && needs.host.result == 'success' }}
     runs-on: "ubuntu-22.04"
+    permissions:
+      contents: read
     env:
       GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
     steps:
-      - name: Download all artifacts
+      - name: Download artifacts
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           pattern: artifacts-*
           path: artifacts
           merge-multiple: true
-      - name: Publish release to tap repo
+      - name: Push formula to tap
         run: |
           TAG="${{ needs.plan.outputs.tag }}"
-          VERSION="${TAG#v}"
-          TAP_REPO="jeremycastanza/homebrew-selah-tap"
+          TAP_REPO="jeremycastanza/homebrew-selah"
 
-          # Collect release assets
-          ASSETS=()
-          for f in artifacts/selah-*.tar.xz \
-                   artifacts/selah-*.sha256 \
-                   artifacts/selah-installer.sh \
-                   artifacts/sha256.sum; do
-            [ -f "$f" ] && ASSETS+=("$f")
-          done
+          # The cargo-dist generated formula is in the release artifacts
+          if [ ! -f "artifacts/selah.rb" ]; then
+            echo "Error: selah.rb not found in artifacts"
+            exit 1
+          fi
 
-          # Delete existing release on tap repo if re-running
-          gh release delete "$TAG" --repo "$TAP_REPO" --yes 2>/dev/null || true
-
-          # Create release on tap repo with all binary assets
-          gh release create "$TAG" \
-            --repo "$TAP_REPO" \
-            --title "selah $VERSION" \
-            --notes "Release $VERSION — binaries for macOS ARM and Linux ARM." \
-            "${ASSETS[@]}"
-      - name: Generate and push formula
-        run: |
-          TAG="${{ needs.plan.outputs.tag }}"
-          VERSION="${TAG#v}"
-          TAP_REPO="jeremycastanza/homebrew-selah-tap"
-
-          # Get asset IDs and checksums from the tap repo release
-          RELEASE_JSON=$(gh api "repos/$TAP_REPO/releases/tags/$TAG")
-
-          get_asset_id() {
-            echo "$RELEASE_JSON" | jq -r ".assets[] | select(.name == \"$1\") | .id"
-          }
-
-          # Read checksums from cargo-dist output
-          get_sha256() {
-            cat "artifacts/$1.sha256" | awk '{print $1}'
-          }
-
-          AARCH64_MACOS_ID=$(get_asset_id "selah-aarch64-apple-darwin.tar.xz")
-          AARCH64_MACOS_SHA=$(get_sha256 "selah-aarch64-apple-darwin.tar.xz")
-          AARCH64_LINUX_ID=$(get_asset_id "selah-aarch64-unknown-linux-gnu.tar.xz")
-          AARCH64_LINUX_SHA=$(get_sha256 "selah-aarch64-unknown-linux-gnu.tar.xz")
-
-          API_BASE="https://api.github.com/repos/$TAP_REPO/releases/assets"
-
-          # Generate formula using a helper to build each url line.
-          # The Ruby string interpolation (#{ENV[...]}) must survive shell expansion.
-          url_line() {
-            local id="$1"
-            printf '    url "%s/%s", headers: ["Authorization: token #{ENV["HOMEBREW_GITHUB_API_TOKEN"]}", "Accept: application/octet-stream"]\n' "$API_BASE" "$id"
-          }
-
-          {
-            echo 'class Selah < Formula'
-            echo '  desc "A terminal Bible reader"'
-            echo "  homepage \"https://github.com/jeremycastanza/selah\""
-            echo "  version \"$VERSION\""
-            echo '  license "MIT"'
-            echo ''
-            echo '  on_macos do'
-            echo '    on_arm do'
-            url_line "$AARCH64_MACOS_ID"
-            echo "    sha256 \"$AARCH64_MACOS_SHA\""
-            echo '    end'
-            echo '  end'
-            echo ''
-            echo '  on_linux do'
-            echo '    on_arm do'
-            url_line "$AARCH64_LINUX_ID"
-            echo "    sha256 \"$AARCH64_LINUX_SHA\""
-            echo '    end'
-            echo '  end'
-            echo ''
-            echo '  def install'
-            echo '    bin.install "selah"'
-            echo '  end'
-            echo 'end'
-          } > /tmp/selah.rb
-
-          CONTENT=$(base64 -w 0 /tmp/selah.rb)
+          CONTENT=$(base64 -w 0 artifacts/selah.rb)
 
           # Get existing file SHA (required by GitHub API for updates)
           EXISTING_SHA=$(gh api \
@@ -390,13 +319,13 @@ jobs:
           if [ -n "$EXISTING_SHA" ]; then
             gh api "repos/$TAP_REPO/contents/Formula/selah.rb" \
               --method PUT \
-              --field message="selah $VERSION" \
+              --field message="selah ${TAG#v}" \
               --field content="$CONTENT" \
               --field sha="$EXISTING_SHA"
           else
             gh api "repos/$TAP_REPO/contents/Formula/selah.rb" \
               --method PUT \
-              --field message="selah $VERSION" \
+              --field message="selah ${TAG#v}" \
               --field content="$CONTENT"
           fi
 
@@ -404,11 +333,11 @@ jobs:
     needs:
       - plan
       - host
-      - publish-tap
+      - publish-homebrew
     # use "always() && ..." to allow us to wait for all publish jobs while
     # still allowing individual publish jobs to skip themselves (for prereleases).
     # "host" however must run to completion, no skipping allowed!
-    if: ${{ always() && needs.host.result == 'success' && (needs.publish-tap.result == 'success' || needs.publish-tap.result == 'skipped') }}
+    if: ${{ always() && needs.host.result == 'success' && (needs.publish-homebrew.result == 'success' || needs.publish-homebrew.result == 'skipped') }}
     permissions:
       contents: write
     runs-on: "ubuntu-22.04"
