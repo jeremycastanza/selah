@@ -86,6 +86,33 @@ selah --no-banner  # skip the splash screen
 | Linux (x86) | Not built in CI; compiles from source |
 | Windows | Not supported (WSL may work) |
 
+## Additional Translations
+
+Selah bundles the KJV for fully offline use. To access additional translations (ESV, NIV, NLT, etc.), you need a [YouVersion Platform](https://developers.youversion.com) API key.
+
+### Getting a YouVersion Platform App Key
+
+1. Go to [developers.youversion.com](https://developers.youversion.com)
+2. Sign in or create an account
+3. Create a new application
+4. Copy your **App Key** from the application dashboard
+
+### Adding Your Key to Selah
+
+**Option A — In the app:**
+
+1. Press `S` to open Settings
+2. Press `K` to edit the API key
+3. Paste your key and press `Enter`
+
+**Option B — Environment variable:**
+
+```bash
+export SELAH_YVP_APP_KEY="your-app-key-here"
+```
+
+Once configured, press `v` to open the translation picker and select from available translations.
+
 ## Tech Stack
 
 | Layer | Technology |
