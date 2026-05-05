@@ -1,12 +1,12 @@
 # Deployment
 
-_Last updated: 2026-04-08_
+_Last updated: 2026-05-04_
 
 ## Distribution Model
 
 Selah is distributed as a compiled Rust binary via:
 
-1. **Private Homebrew tap** — `jeremycastanza/homebrew-selah-tap`
+1. **Homebrew tap** — `jeremycastanza/homebrew-selah` (public)
 2. **Shell installer** — `curl | sh` from GitHub Releases
 3. **GitHub Releases** — direct tarball download
 
@@ -14,7 +14,7 @@ Selah is distributed as a compiled Rust binary via:
 
 Powered by [cargo-dist](https://github.com/axodotdev/cargo-dist) v0.31.0.
 
-**Trigger:** Push a tag matching `v*.*.*` (e.g., `v0.1.0`).
+**Trigger:** Push a tag matching `v*.*.*` (e.g., `v1.0.0`).
 
 **Config:** `dist-workspace.toml`
 
@@ -24,7 +24,7 @@ Powered by [cargo-dist](https://github.com/axodotdev/cargo-dist) v0.31.0.
 2. **Build local artifacts** — Compile binaries for each target
 3. **Build global artifacts** — Generate shell installer, checksums, Homebrew formula
 4. **Host** — Upload artifacts and create GitHub Release
-5. **Publish tap** — Mirror release assets to `homebrew-selah-tap` and update the formula
+5. **Publish Homebrew** — Push the cargo-dist generated formula (`selah.rb`) to the tap repo
 6. **Announce** — Finalize release
 
 ### Build Targets
@@ -47,35 +47,40 @@ Powered by [cargo-dist](https://github.com/axodotdev/cargo-dist) v0.31.0.
 
 | Item | Details |
 |------|---------|
-| Tap repo | `jeremycastanza/homebrew-selah-tap` (private) |
-| Auth | `HOMEBREW_GITHUB_API_TOKEN` env var (GitHub PAT with `repo` scope) |
-| Tap command | `brew tap jeremycastanza/selah-tap git@github-personal:jeremycastanza/homebrew-selah-tap.git` |
+| Tap repo | [`jeremycastanza/homebrew-selah`](https://github.com/jeremycastanza/homebrew-selah) (public) |
+| Tap command | `brew tap jeremycastanza/selah` |
 | Install | `brew install selah` |
 | Update | `brew upgrade selah` |
 
-The formula downloads pre-built binaries from the tap repo's own releases (not the source repo), using GitHub API asset URLs with token-based auth headers. This mirrors the `homebrew-lexicon-tap` pattern.
+The formula uses direct public release download URLs from the `selah` repo — no authentication required for users.
 
-### Tap Release Automation
+### How the Tap is Updated
 
-The `publish-tap` CI job:
-1. Downloads build artifacts from the main release
-2. Creates a matching release on the tap repo with binary assets
-3. Generates a Homebrew formula (`Formula/selah.rb`) with correct asset IDs and SHA256 checksums
-4. Pushes the formula to the tap repo via the GitHub API
+The `publish-homebrew` CI job:
+1. Downloads the cargo-dist generated `selah.rb` from build artifacts
+2. Pushes it to `Formula/selah.rb` in the tap repo via the GitHub API
 
-Requires a `HOMEBREW_TAP_TOKEN` secret in the source repo with write access to the tap repo.
+The tap repo contains **only** the formula and a README — no releases, no binary assets. All binaries are downloaded from the `selah` repo's GitHub Releases.
+
+Requires a `HOMEBREW_TAP_TOKEN` secret in the `selah` repo (fine-grained PAT with `contents:write` on `homebrew-selah`).
+
+### Tap Branch Ruleset
+
+The tap has a branch ruleset on `main` with a bypass for the Repository Admin role. This allows the CI job (authenticated via `HOMEBREW_TAP_TOKEN`) to push formula updates directly without a PR.
 
 ## Release Process
 
 ```bash
-# Tag a new release (annotated)
+# 1. Bump version in Cargo.toml
+# 2. Commit and merge to main
+# 3. Tag and push (annotated tags only)
 git tag -a v<version> -m "v<version>"
 git push origin v<version>
 
 # CI handles everything from here:
 # - Builds binaries for all targets
 # - Creates GitHub Release with artifacts
-# - Publishes to Homebrew tap
+# - Pushes updated formula to Homebrew tap
 ```
 
 ## Related Documents
